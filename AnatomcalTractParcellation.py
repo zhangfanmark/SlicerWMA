@@ -77,6 +77,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     # Input parameters area
     #
+
     self.inputsCollapsibleButton = ctk.ctkCollapsibleButton()
     self.inputsCollapsibleButton.text = "IO"
     self.layout.addWidget(self.inputsCollapsibleButton)
@@ -86,52 +87,88 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     # Input file selector
     #
+
     with It(qt.QLineEdit()) as w:
         self.inputFileSelector = w
         w.setReadOnly(True)
         w.setToolTip("Select input file")
 
     def selectInputFile():
+      self.inputFileSelector.clear()
       inputFile = qt.QFileDialog.getOpenFileName(self.parent, "Select input file")
-
       if inputFile:
-          self.inputFileSelector.setText(inputFile)
+        self.inputFileSelector.setText(inputFile)
+
+    # Provides direct execution of tractography files already loaded in Slicer
+    # Specified method (only useful when data name is atlas
+    def executeTractography():
+      self.inputFileSelector.clear()
+      fileNode = slicer.util.getNode('atlas')  
+      if fileNode is not None:  
+        storageNode = fileNode.GetStorageNode()
+        if storageNode is not None: 
+          filepath = storageNode.GetFullNameFromFileName()
+          self.inputFileSelector.setText(filepath)
+    # Choose method 
+    def showDataNodeNames():
+      self.inputFileSelector.clear()
+      dataNodeNames = slicer.util.getNodesByClass("vtkMRMLDataNode")
+      dialog = qt.QDialog()
+      dialog.setWindowTitle("Data Node Selection")
+      layout = qt.QVBoxLayout(dialog)
+      label = qt.QLabel("Select a data node:")
+      layout.addWidget(label)
+      combo = qt.QComboBox()
+      scene = slicer.mrmlScene
+      node_names = []
+      for i in range(scene.GetNumberOfNodes()):
+        node = scene.GetNthNodeByClass(i, "vtkMRMLNode")
+        # The node name is added only when the node type is vtkMRMLModelNode
+        if node.IsA("vtkMRMLModelNode"):
+          node_name = node.GetName()
+          node_names.append(node_name)
+          combo.addItem(node_name)
+
+      layout.addWidget(combo)
+      buttonBox = qt.QDialogButtonBox()
+      okButton = buttonBox.addButton(qt.QDialogButtonBox.Ok)
+      cancelButton = buttonBox.addButton(qt.QDialogButtonBox.Cancel)
+      layout.addWidget(buttonBox)
+
+      def accept():
+        selectedNodeName = str(combo.currentText)
+        fileNode = slicer.util.getNode(selectedNodeName)  
+        if fileNode is not None:  
+          storageNode = fileNode.GetStorageNode()
+          if storageNode is not None: 
+            filepath = storageNode.GetFullNameFromFileName()
+            self.inputFileSelector.setText(filepath)
+        dialog.accept()
+
+      okButton.connect("clicked()", accept)
+      cancelButton.connect("clicked()", dialog.reject)
+      dialog.exec_()
 
     with It(qt.QPushButton("Browse")) as button:
         button.clicked.connect(selectInputFile)
 
+    with It(qt.QPushButton("Execute")) as executeButton:
+        #executeButton.clicked.connect(executeTractography)
+        executeButton.clicked.connect(showDataNodeNames)
+
     layout = qt.QHBoxLayout()
     layout.addWidget(self.inputFileSelector)
     layout.addWidget(button)
+    layout.addWidget(executeButton)
 
     parametersFormLayout.addRow("Input File:", layout)
 
-    #
-    # Input folder selector
-    #
-    with It(qt.QLineEdit()) as w:
-        self.inputFolderSelector = w
-        w.setReadOnly(True)
-        w.setToolTip("Select input folder")
-
-    def selectInputFolder(): 
-      inputfile_path = qt.QFileDialog.getExistingDirectory(self.parent, "Select input folder")
-      if inputfile_path:
-          self.inputFolderSelector.setText(inputfile_path)
-
-    with It(qt.QPushButton("Browse")) as button:
-        button.clicked.connect(selectInputFolder)
-
-    layout = qt.QHBoxLayout()
-    layout.addWidget(self.inputFolderSelector)
-    layout.addWidget(button)
-
-    parametersFormLayout.addRow("Input Folder:", layout)
+    
 
     #
     # Output folder selector
     #
-    
+
     with It(qt.QLineEdit()) as w:
         self.outputFolderSelector = w
         w.setReadOnly(True)
@@ -159,12 +196,12 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     layout = qt.QHBoxLayout()
     layout.addWidget(self.outputFolderSelector)
     layout.addWidget(button)
-
     parametersFormLayout.addRow("Output Folder:", layout)
 
     #
     # Apply Button
     #
+
     with It(qt.QPushButton("Apply")) as w:
         self.applyButton = w
         w.toolTip = "Run the algorithm."
@@ -177,6 +214,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     # Advanced parameters area
     #
+
     parametersCollapsibleButton = ctk.ctkCollapsibleButton()
     parametersCollapsibleButton.text = "Advanced parameters"
     self.layout.addWidget(parametersCollapsibleButton)
@@ -185,6 +223,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     # RegMode selector
     #
+
     with It(qt.QComboBox()) as w:
         self.regModeSelector = w
         w.addItem("rig")
@@ -195,6 +234,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     # CleanMode selector
     #
+
     with It(qt.QCheckBox()) as w:
         self.CleanFilesSelector = w
         w.checked = True
@@ -204,6 +244,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     # NumThreads controller
     #
+
     with It(ctk.ctkSliderWidget()) as w:
         self.NumThreadsSelector = w
         w.minimum = 1
@@ -253,8 +294,6 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
   def cleanup(self):
     pass
-    # Refresh Apply button state
-    #self.onSelect()
 
   def onSelect(self):
     self.applyButton.enabled = self.inputSelector.currentNode() and self.outputSelector.currentNode()
@@ -267,7 +306,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     logic = AnatomcalTractParcellationLogic()
     logic.run(
               self.inputFileSelector.text,
-              self.inputFolderSelector.text,
+              #self.inputFolderSelector.text,
               self.outputFolderSelector.text,
               RegMode = self.regModeSelector.currentText,
               CleanMode = self.CleanFilesSelector.checked,
@@ -412,6 +451,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     slicer.util.saveNode(polydata_node, output_name)
 
   def python_harden_transform(self, inputDirectory, outputDirectory, transform_file, numberOfJobs, inverse_transform=True):
+    
     #set the initial settings and apply transform
     inputdir = os.path.abspath(inputDirectory)
     if not os.path.isdir(inputDirectory):
@@ -468,8 +508,8 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     number_of_results = len(output_polydatas)
     print("<wm_harden_transform_with_slicer> Transform were conducted for", number_of_results, "subjects.")
 
-  def run(self, inputFilePath, inputFolderPath, outputFolderPath, RegMode, CleanMode, NumThreads):
-    
+  def run(self, inputFilePath, outputFolderPath, RegMode, CleanMode, NumThreads):
+      
       # Get CaseID 
       filename = os.path.basename(inputFilePath)
       caseID = os.path.splitext(filename)[0]
@@ -490,10 +530,13 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       print("")
 
       # Setup white matter parcellation atlas
-      AtlasBaseFolder = inputFolderPath
+      atlasBasepath = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'Resources')
+      AtlasBaseFolder = str(glob.glob(os.path.join(atlasBasepath, 'ORG-Atlases*'))[0])
+      
+      #AtlasBaseFolder = os.path.dirname(os.path.dirname(inputFilePath))
       input_tractography_path = inputFilePath
-      RegAtlasFolder = AtlasBaseFolder + "/ORG-RegAtlas-100HCP"
-      FCAtlasFolder = AtlasBaseFolder + "/ORG-800FC-100HCP"
+      RegAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-RegAtlas-100HCP')
+      FCAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-800FC-100HCP')
       pythonSlicerExecutablePath = AnatomcalTractParcellationLogic._executePythonModule()
       print("<wm_apply_ORG_atlas_to_subject> White matter atlas: ", AtlasBaseFolder)
       print(" - tractography registration atlas:", RegAtlasFolder)
@@ -565,7 +608,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
                         '-norender'
                     ]                       
           process = subprocess.Popen(commandLine, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)                        
-          process.wait() # 等待命令执行完毕
+          process.wait() 
 
       else:
           print(" - initial fiber clustering has been done.")
@@ -595,7 +638,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
                         FiberClusteringOutlierRemFolder,
                     ]
           process = subprocess.Popen(commandLine, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-          process.wait() # 等待命令执行完毕
+          process.wait() 
 
       else:
           print(" - outlier fiber removal has been done.")
@@ -699,6 +742,28 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
           print("")
           print("ERROR: Appending clusters into anatomical tracts failed. There should be 73 resulting fiber clusters, but only $numfiles generated.")
           print("")
+
+      #Load the generated anatomical tracts back into Slicer
+      for file_name in os.listdir(AnatomicalTractsFolder):
+        # Check whether the file extension is VTP
+        if file_name.endswith(".vtp"):
+            # Build the full path of the file
+            file_path = os.path.join(AnatomicalTractsFolder, file_name)
+            modelNode = slicer.vtkMRMLModelNode()
+            modelNode.SetName(file_name)
+            # Use vtkMRMLModelDisplayNode to set the display properties of the model
+            displayNode = slicer.vtkMRMLModelDisplayNode()
+            displayNode.SetVisibility(True)  # Set visibility to True
+            slicer.mrmlScene.AddNode(displayNode)
+            
+            # Read the VTP file with the vtkPolyDataReader
+            reader = vtk.vtkXMLPolyDataReader()
+            reader.SetFileName(file_path)
+            reader.Update()
+            
+            modelNode.SetAndObserveDisplayNodeID(displayNode.GetID())
+            # load vtp in slicer
+            #loaded_model_node = slicer.util.loadNodeFromFile(file_path)
       
       #start diffusion
       FiberTractMeasurementsCLI = slicer.modules.fibertractmeasurements.path #find and store the path of cli-module "FiberTractMeasurements"

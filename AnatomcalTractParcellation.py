@@ -744,26 +744,35 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
           print("")
 
       #Load the generated anatomical tracts back into Slicer
+
+
+      def loadVTPFile(file_path):
+        scene = slicer.mrmlScene
+
+        # Load the VTP file as a model
+        loaded_model_node = slicer.util.loadModel(file_path)
+        if loaded_model_node is None:
+            print(f"Failed to load VTP file: {file_path}")
+            return
+
+        # Modify the display properties of the loaded model
+        display_node = loaded_model_node.GetDisplayNode()
+        if display_node is None:
+            display_node = slicer.vtkMRMLModelDisplayNode()
+            scene.AddNode(display_node)
+            loaded_model_node.SetAndObserveDisplayNodeID(display_node.GetID())
+
+        display_node.SetVisibility(True)
+
+      # Iterate over files in the AnatomicalTractsFolder
       for file_name in os.listdir(AnatomicalTractsFolder):
-        # Check whether the file extension is VTP
-        if file_name.endswith(".vtp"):
-            # Build the full path of the file
-            file_path = os.path.join(AnatomicalTractsFolder, file_name)
-            modelNode = slicer.vtkMRMLModelNode()
-            modelNode.SetName(file_name)
-            # Use vtkMRMLModelDisplayNode to set the display properties of the model
-            displayNode = slicer.vtkMRMLModelDisplayNode()
-            displayNode.SetVisibility(True)  # Set visibility to True
-            slicer.mrmlScene.AddNode(displayNode)
-            
-            # Read the VTP file with the vtkPolyDataReader
-            reader = vtk.vtkXMLPolyDataReader()
-            reader.SetFileName(file_path)
-            reader.Update()
-            
-            modelNode.SetAndObserveDisplayNodeID(displayNode.GetID())
-            # load vtp in slicer
-            #loaded_model_node = slicer.util.loadNodeFromFile(file_path)
+          if file_name.endswith(".vtp"):
+              file_path = os.path.join(AnatomicalTractsFolder, file_name)
+              try:
+                  loadVTPFile(file_path)
+              except Exception as e:
+                  print(f"Error loading VTP file: {file_path}")
+                  print(f"Error message: {str(e)}")
       
       #start diffusion
       FiberTractMeasurementsCLI = slicer.modules.fibertractmeasurements.path #find and store the path of cli-module "FiberTractMeasurements"

@@ -7,7 +7,6 @@ import subprocess
 import importlib.metadata, glob, time
 import argparse
 import multiprocessing
-from joblib import Parallel, delayed
 import shutil
 
 # helper class for cleaner multi-operation blocks on a single node.
@@ -41,6 +40,7 @@ class AnatomcalTractParcellation(ScriptedLoadableModule):
 class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
   def setup(self):
+
     ScriptedLoadableModuleWidget.setup(self)
 
     self.logic = AnatomcalTractParcellationLogic()
@@ -88,17 +88,27 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     # Input file selector
     #
 
+    # select from the local disk
     with It(qt.QLineEdit()) as w:
-        self.inputFileSelector = w
+        self.inputFileGet = w
         w.setReadOnly(True)
         w.setToolTip("Select input file")
 
     def selectInputFile():
-      self.inputFileSelector.clear()
+      self.inputFileGet.clear()
       inputFile = qt.QFileDialog.getOpenFileName(self.parent, "Select input file")
       if inputFile:
-        self.inputFileSelector.setText(inputFile)
+        self.inputFileGet.setText(inputFile)
 
+    with It(qt.QPushButton("Browse")) as button:
+        button.clicked.connect(selectInputFile)
+
+    layout = qt.QHBoxLayout()
+    layout.addWidget(self.inputFileGet)
+    layout.addWidget(button)
+    #layout.addWidget(executeButton)
+    parametersFormLayout.addRow("Input File:", layout)
+    '''
     # Provides direct execution of tractography files already loaded in Slicer
     # Specified method (only useful when data name is atlas
     def executeTractography():
@@ -148,27 +158,151 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
       okButton.connect("clicked()", accept)
       cancelButton.connect("clicked()", dialog.reject)
       dialog.exec_()
+      '''
 
-    with It(qt.QPushButton("Browse")) as button:
-        button.clicked.connect(selectInputFile)
+    
 
+    '''
     with It(qt.QPushButton("Execute")) as executeButton:
         #executeButton.clicked.connect(executeTractography)
         executeButton.clicked.connect(showDataNodeNames)
-
-    layout = qt.QHBoxLayout()
-    layout.addWidget(self.inputFileSelector)
-    layout.addWidget(button)
-    layout.addWidget(executeButton)
-
-    parametersFormLayout.addRow("Input File:", layout)
+    '''
 
     
+
+
+    # load from slicer
+    self.inputSelector = slicer.qMRMLNodeComboBox()
+    self.inputSelector.nodeTypes = ["vtkMRMLFiberBundleNode"]
+    self.inputSelector.selectNodeUponCreation = True
+    self.inputSelector.addEnabled = False
+    self.inputSelector.removeEnabled = False
+    self.inputSelector.noneEnabled = False
+    self.inputSelector.showHidden = False
+    self.inputSelector.showChildNodeTypes = False
+    self.inputSelector.setMRMLScene( slicer.mrmlScene )
+    self.inputSelector.setToolTip( "Pick the tractography data to use for input." )
+    parametersFormLayout.addRow("Input FiberBundle: ", self.inputSelector)
+
+
+    #
+    # decide the source of input
+    #
+    def onLocalDiskButtonClicked():
+      self.x = self.inputFileGet.text
+      print(self.x)
+      
+    def onSlicerButtonClicked():
+      #self.x = self.inputSelector.currentNode()
+      #print(self.x)
+
+      selectedNode = self.inputSelector.currentNode()
+      if selectedNode is not None:
+          selectedNodeName = selectedNode.GetName()
+          print("选中的纤维束名称：", selectedNodeName)
+          if selectedNode.IsA("vtkMRMLFiberBundleNode"):
+              storageNode = selectedNode.GetStorageNode()
+              if storageNode is not None:
+                  # 如果存在关联的存储节点，获取文件路径属性
+                  filePathProperty = selectedNode.GetNodeReferenceID("FileName")
+                  if filePathProperty != "":
+                      filePath = slicer.mrmlScene.GetNodeByID(filePathProperty).GetAttribute("FileName")
+                      print("纤维束文件路径：", filePath)
+                  else:
+                      print("纤维束节点没有关联的文件路径属性。")
+              else:
+                  print("纤维束节点没有关联的存储节点。")
+      else:
+          print("未选择纤维束节点。")
+
+      '''
+      selectedNode = self.inputSelector.currentNode()
+      if selectedNode is not None:
+          selectedNodeName = str(selectedNode.GetName())
+          print("Selected fiber bundle name:", selectedNodeName)
+          filepath = slicer.util.getNode(selectedNodeName).GetStorageNode().GetFileName()
+          print(filepath)
+      '''
+      '''
+          fileNode = slicer.util.getNode(selectedNodeName)  
+          if fileNode is not None:  
+            storageNode = fileNode.GetStorageNode()
+            
+            print(storageNode)
+            if storageNode is not None: 
+              print('3')
+              filepath2 = storageNode.GetFullNameFromFileName()
+              print(filepath2)  
+            else:
+              print('2')
+          else:
+            print('1')
+            
+            
+
+      else:
+          print("未选择纤维束节点。")
+      '''
+      '''
+      selectedNodeID = self.inputSelector.currentNodeID
+      if selectedNodeID != "":
+          selectedNode = slicer.mrmlScene.GetNodeByID(selectedNodeID)
+          print(selectedNodeID)
+          storageNode = selectedNode.GetStorageNode()
+          if storageNode is not None:
+              filepath = storageNode.GetFullNameFromFileName()
+              print("选中的纤维束路径：", filepath)
+          else:
+              print("纤维束节点没有关联的存储节点。")
+      else:
+          print("未选择纤维束节点。")
+      '''
+      
+      '''
+      if selectedNode is not None:
+          storageNode = selectedNode.GetStorageNode()
+          if storageNode is not None:
+              filePath = storageNode.GetFullNameFromFileName()
+              print("选中的FiberBundle路径:", filePath)
+          else:
+            print("The selected FiberBundle node has no associated storage node")
+      else:
+      print("No FiberBundle nodes are selected")
+      '''
+
+    
+    # create the box for choosing the source of the file
+    widget = slicer.qMRMLWidget()
+    widget.setLayout(qt.QVBoxLayout())  
+
+    groupBox = qt.QGroupBox()
+    groupBox.setLayout(qt.QVBoxLayout())  
+    widget.layout().addWidget(groupBox)
+
+    titleLabel = qt.QLabel("Choose the source of the input file involved")
+    groupBox.layout().addWidget(titleLabel)
+
+    buttonGroup = qt.QButtonGroup()
+
+    # Create the "From Local Disk" button
+    localDiskButton = qt.QRadioButton("From Local Disk")
+    buttonGroup.addButton(localDiskButton)
+    groupBox.layout().addWidget(localDiskButton)
+
+    # Create the "From Slicer" button
+    slicerButton = qt.QRadioButton("From Slicer")
+    buttonGroup.addButton(slicerButton)
+    groupBox.layout().addWidget(slicerButton)
+
+    localDiskButton.connect('clicked()', onLocalDiskButtonClicked)
+    slicerButton.connect('clicked()', onSlicerButtonClicked)
+
+    parametersFormLayout.addRow("", widget)
 
     #
     # Output folder selector
     #
-
+    
     with It(qt.QLineEdit()) as w:
         self.outputFolderSelector = w
         w.setReadOnly(True)
@@ -254,6 +388,11 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
         parametersFormLayout.addRow("NumThreads: ",self.NumThreadsSelector)
     
   def updateMsgInformation(self):
+  # Check Xcode Command Line Tools installation
+    if os.name == 'posix':
+      self.logic.check_install_xcode_cli()
+
+
   #update the status of the wma and atlas
     try:
       self.wmaInstalled, msg = self.logic.checkWMAInstall()
@@ -274,6 +413,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     
     install = slicer.util.confirmYesNoDisplay("Depending on your internet speed, the installation may take several minutes.  "+\
                       "Slicer will be freezing during this time. Confirm to staring insalling:")
+
     if install:
       self.logic.installWMA()
     self.wmaInstalled, msg = self.logic.checkWMAInstall()
@@ -305,7 +445,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     self.statusLabel.setText("")
     logic = AnatomcalTractParcellationLogic()
     logic.run(
-              self.inputFileSelector.text,
+              self.x,
               #self.inputFolderSelector.text,
               self.outputFolderSelector.text,
               RegMode = self.regModeSelector.currentText,
@@ -319,6 +459,26 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
 class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
 
+  
+  # Check whether Xcode Command Line Tools is installed in Slicer Python
+  def check_install_xcode_cli(self):
+    try:
+        # Run the command to check if Xcode is installed
+        result = subprocess.run(['xcode-select', '--print-path'], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            pass
+        else:
+            msgBox = qt.QMessageBox()
+            msgBox.setWindowTitle("Xcode Command Line Tools")
+            msgBox.setText("Xcode Command Line Tools is not installed.")
+            msgBox.setInformativeText("Run the 'xcode-select --install' Command in the terminal to install the Xcode Command Line Tools.")
+            msgBox.setIcon(qt.QMessageBox.Warning)
+            msgBox.exec_()
+    except Exception as e:
+        print("Error checking Xcode installation status:", str(e))
+    
+    
   @staticmethod
   # check the wma installation
   def checkWMAInstall():
@@ -362,10 +522,11 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
   @staticmethod
   #install WMA package
   def installWMA():
-    # Modify the http.version configuration
-    subprocess.run(["git", "config", "--global", "http.version", "HTTP/1.1"])
-    # Modify the http.postBuffer configuration
-    subprocess.run(["git", "config", "--global", "http.postBuffer", "524288000"])
+    if os.name == 'posix':
+      # Modify the http.version configuration
+      subprocess.run(["git", "config", "--global", "http.version", "HTTP/1.1"])
+      # Modify the http.postBuffer configuration
+      subprocess.run(["git", "config", "--global", "http.postBuffer", "524288000"])
     slicer.util.pip_install('git+https://github.com/SlicerDMRI/whitematteranalysis.git')
 
   @staticmethod
@@ -376,7 +537,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
 
     try:
       wm_download_anatomically_curated_atlas = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_download_anatomically_curated_atlas.py" in str(p)][0]
-      wm_download_anatomically_curated_atlas = os.path.join(os.path.dirname(pythonSlicerExecutalePath), '..', 'lib', 'Python', 'bin', 'wm_download_anatomically_curated_atlas.py')
+      wm_download_anatomically_curated_atlas = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_download_anatomically_curated_atlas.py')
     except Exception as e:
       logging.error(e)
       logging.error("Cannot find wm_download_anatomically_curated_atlas.py script. Check WMA installation.")
@@ -388,12 +549,13 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     slicer.util.logProcessOutput(proc)
 
   def _executePythonModule():
+    import os, sys
     """ Updated based on: https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/util.py
     Execute a Python module as a script in Slicer's Python environment.
     :raises RuntimeError: in case of failure
     """
     # Determine pythonSlicerExecutablePath
-    try:
+    if os.name == 'posix':
         from slicer import app  # noqa: F401
         # If we get to this line then import from "app" is succeeded,
         # which means that we run this function from Slicer Python interpreter.
@@ -403,13 +565,12 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         pythonSlicerExecutablePath = shutil.which('PythonSlicer')
         if not pythonSlicerExecutablePath:
             raise RuntimeError("PythonSlicer executable not found")
-    except ImportError:
+    
+    elif os.name == 'nt':
         # Running from console
-        import os
-        import sys
-        pythonSlicerExecutablePath = os.path.dirname(sys.executable) + "/PythonSlicer"
-        if os.name == 'nt':
-            pythonSlicerExecutablePath += ".exe"
+        pythonSlicerExecutablePath = os.path.dirname(sys.executable) + "/PythonSlicer" + ".exe"
+        if not pythonSlicerExecutablePath:
+            raise RuntimeError("PythonSlicer executable not found")
 
     return pythonSlicerExecutablePath
 
@@ -508,10 +669,20 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     number_of_results = len(output_polydatas)
     print("<wm_harden_transform_with_slicer> Transform were conducted for", number_of_results, "subjects.")
 
-  def run(self, inputFilePath, outputFolderPath, RegMode, CleanMode, NumThreads):
-      
+  def run(self, x, outputFolderPath, RegMode, CleanMode, NumThreads):
+
+      if os.name == 'posix':
+          # Execute code for Unix-like operating systems
+          print("Running on a UNIX-like system")
+          location = 'bin'
+      elif os.name == 'nt':
+          # Execute code for Windows operating systems
+          print("Running on Windows")
+          location = 'script'
+
+
       # Get CaseID 
-      filename = os.path.basename(inputFilePath)
+      filename = os.path.basename(x)
       caseID = os.path.splitext(filename)[0]
 
       # Setup output
@@ -534,7 +705,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       AtlasBaseFolder = str(glob.glob(os.path.join(atlasBasepath, 'ORG-Atlases*'))[0])
       
       #AtlasBaseFolder = os.path.dirname(os.path.dirname(inputFilePath))
-      input_tractography_path = inputFilePath
+      input_tractography_path = x
       RegAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-RegAtlas-100HCP')
       FCAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-800FC-100HCP')
       pythonSlicerExecutablePath = AnatomcalTractParcellationLogic._executePythonModule()
@@ -545,11 +716,11 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       print("")
       print("<wm_apply_ORG_atlas_to_subject> Tractography registration with mode [", RegMode, "]")
       RegistrationFolder = os.path.join(outputFolderPath, 'TractRegistration')
-      print("input_tractography_path:",inputFilePath)
+      print("input_tractography_path:",x)
      
       #start registration  
       wm_register_to_atlas_new = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_register_to_atlas_new.py" in str(p)][0]
-      wm_register_to_atlas_new = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', 'bin', 'wm_register_to_atlas_new.py')
+      wm_register_to_atlas_new = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_register_to_atlas_new.py')
       if RegMode == "rig":
           RegTractography = os.path.join(RegistrationFolder, caseID, "output_tractography", caseID+"_reg.vtk")
           
@@ -597,7 +768,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       FiberClusteringInitialFolder = os.path.join(outputFolderPath, "FiberClustering/InitialClusters")
       if not os.path.isfile(os.path.join(FiberClusteringInitialFolder, FCcaseID, "cluster_00800.vtp")):
           wm_cluster_from_atlas = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_cluster_from_atlas.py" in str(p)][0]
-          wm_cluster_from_atlas = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', 'bin', 'wm_cluster_from_atlas.py')
+          wm_cluster_from_atlas = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_cluster_from_atlas.py')
           commandLine = [
                         pythonSlicerExecutablePath,
                         wm_cluster_from_atlas,
@@ -628,7 +799,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       if not os.path.isfile(os.path.join(FiberClusteringOutlierRemFolder, f"{FCcaseID}_outlier_removed", "cluster_00800.vtp")):
                                         
           wm_cluster_remove_outliers = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_cluster_remove_outliers.py" in str(p)][0]
-          wm_cluster_remove_outliers = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', 'bin', 'wm_cluster_remove_outliers.py')
+          wm_cluster_remove_outliers = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_cluster_remove_outliers.py')
           commandLine = [
                         pythonSlicerExecutablePath,
                         wm_cluster_remove_outliers,
@@ -710,7 +881,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       SeparatedClustersFolder = os.path.join(outputFolderPath, 'FiberClustering', 'SeparatedClusters')
       if not os.path.exists(os.path.join(SeparatedClustersFolder, 'tracts_commissural', 'cluster_00800.vtp')):
           wm_separate_clusters_by_hemisphere = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_separate_clusters_by_hemisphere.py" in str(p)][0]
-          wm_separate_clusters_by_hemisphere = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', 'bin', 'wm_separate_clusters_by_hemisphere.py')
+          wm_separate_clusters_by_hemisphere = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_separate_clusters_by_hemisphere.py')
           commandLine = [pythonSlicerExecutablePath, wm_separate_clusters_by_hemisphere, FiberClustersInTractographySpace, SeparatedClustersFolder]
           proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
           slicer.util.logProcessOutput(proc)
@@ -728,7 +899,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       AnatomicalTractsFolder = os.path.join(outputFolderPath, "AnatomicalTracts")
       if not os.path.exists(os.path.join(AnatomicalTractsFolder, "T_UF_right.vtp")):
           wm_append_clusters_to_anatomical_tracts = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_append_clusters_to_anatomical_tracts.py" in str(p)][0]
-          wm_append_clusters_to_anatomical_tracts = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', 'bin', 'wm_append_clusters_to_anatomical_tracts.py')
+          wm_append_clusters_to_anatomical_tracts = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_append_clusters_to_anatomical_tracts.py')
           commandLine = [pythonSlicerExecutablePath, wm_append_clusters_to_anatomical_tracts, SeparatedClustersFolder, FCAtlasFolder, AnatomicalTractsFolder]
           proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
           slicer.util.logProcessOutput(proc)
@@ -749,18 +920,18 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       def loadVTPFile(file_path):
         scene = slicer.mrmlScene
 
-        # Load the VTP file as a model
-        loaded_model_node = slicer.util.loadModel(file_path)
-        if loaded_model_node is None:
+        # Load the VTP file as a FiberBundle
+        loaded_fiber_node = slicer.util.loadFiberBundle(file_path)
+        if loaded_fiber_node is None:
             print(f"Failed to load VTP file: {file_path}")
             return
 
-        # Modify the display properties of the loaded model
-        display_node = loaded_model_node.GetDisplayNode()
+        # Modify the display properties of the loaded FiberBundle
+        display_node = loaded_fiber_node.GetDisplayNode()
         if display_node is None:
-            display_node = slicer.vtkMRMLModelDisplayNode()
+            display_node = slicer.vtkMRMLFiberBundleDisplayNode()
             scene.AddNode(display_node)
-            loaded_model_node.SetAndObserveDisplayNodeID(display_node.GetID())
+            loaded_fiber_node.SetAndObserveDisplayNodeID(display_node.GetID())
 
         display_node.SetVisibility(True)
 
@@ -773,11 +944,18 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
               except Exception as e:
                   print(f"Error loading VTP file: {file_path}")
                   print(f"Error message: {str(e)}")
+
+      scene = slicer.mrmlScene
+      for node in scene.GetNodesByClass('vtkMRMLNode'):
+          # Check whether the node name starts with "cluster"
+          if node.GetName().startswith('cluster'):
+              # Remove nodes from the scene
+              scene.RemoveNode(node)
       
       #start diffusion
       FiberTractMeasurementsCLI = slicer.modules.fibertractmeasurements.path #find and store the path of cli-module "FiberTractMeasurements"
       wm_diffusion_measurements = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_diffusion_measurements.py" in str(p)][0]
-      wm_diffusion_measurements = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', 'bin', 'wm_diffusion_measurements.py')
+      wm_diffusion_measurements = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_diffusion_measurements.py')
       print("<wm_apply_ORG_atlas_to_subject> Report diffusion measurements of fiber clusters.")
       if not os.path.isfile(os.path.join(SeparatedClustersFolder, "diffusion_measurements_commissural.csv")):
           commandLine = [pythonSlicerExecutablePath, wm_diffusion_measurements, os.path.join(SeparatedClustersFolder, "tracts_commissural"), os.path.join(SeparatedClustersFolder, "diffusion_measurements_commissural.csv"), FiberTractMeasurementsCLI]

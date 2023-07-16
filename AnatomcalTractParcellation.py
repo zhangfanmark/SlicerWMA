@@ -1,4 +1,4 @@
-import os, unittest, warnings
+import os, re, unittest, warnings
 import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 import logging
@@ -8,6 +8,7 @@ import importlib.metadata, glob, time
 import argparse
 import multiprocessing
 import shutil
+
 
 # helper class for cleaner multi-operation blocks on a single node.
 class It(object):
@@ -32,12 +33,18 @@ class AnatomcalTractParcellation(ScriptedLoadableModule):
                             to perform subject-specific tractography parcellation."
     self.parent.helpText += self.getDefaultModuleDocumentationLink()
     self.parent.acknowledgementText = ""
+    super(AnatomcalTractParcellationWidget, self).__init__(parent)
+    self.loadmode = None  # Initialize self.loadmode, self.selectedNodeName, self.polydata, self.inputFileGet.text to None
+    self.selectedNodeName = None
+    self.polydata = None
+    self.inputFileGet.text = None
 
 #
 # AnatomcalTractParcellationWidget
 #
 
 class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
+
 
   def setup(self):
 
@@ -83,17 +90,56 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     self.layout.addWidget(self.inputsCollapsibleButton)
     parametersFormLayout = qt.QFormLayout(self.inputsCollapsibleButton)
     self.downloadAtlasButton.connect('clicked(bool)', self.onDownloadAtlas)
-    
+
     #
-    # Input file selector
+    # decide the source of input
     #
+    def onLocalDiskButtonClicked():
+      self.loadmode = "disk"
+      print("load mode:",self.loadmode)
+
+    def onSlicerButtonClicked():
+      self.loadmode = "slicer"
+      print("load mode:",self.loadmode)
 
     # select from the local disk
     with It(qt.QLineEdit()) as w:
         self.inputFileGet = w
         w.setReadOnly(True)
         w.setToolTip("Select input file")
+    # create the box for choosing the source of the file
+    widget = slicer.qMRMLWidget()
+    widget.setLayout(qt.QVBoxLayout())  
 
+    groupBox = qt.QGroupBox()
+    groupBox.setLayout(qt.QHBoxLayout())  
+    widget.layout().addWidget(groupBox)
+
+    buttonGroup = qt.QButtonGroup()
+
+    # Create the "From Local Disk" button
+    localDiskButton = qt.QRadioButton("Input from disk")
+    buttonGroup.addButton(localDiskButton)
+    groupBox.layout().addWidget(localDiskButton)
+
+    # Create the "From Slicer" button
+    slicerButton = qt.QRadioButton("Input from Slicer")
+    buttonGroup.addButton(slicerButton)
+    groupBox.layout().addWidget(slicerButton)
+
+    groupBox.layout().addStretch(1)
+
+    localDiskButton.connect('clicked()', onLocalDiskButtonClicked)
+    slicerButton.connect('clicked()', onSlicerButtonClicked)
+    
+
+    parametersFormLayout.addRow("", widget)
+
+    #
+    # Input file selector
+    #
+
+    # load from disk
     def selectInputFile():
       self.inputFileGet.clear()
       inputFile = qt.QFileDialog.getOpenFileName(self.parent, "Select input file")
@@ -108,69 +154,8 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     layout.addWidget(button)
     #layout.addWidget(executeButton)
     parametersFormLayout.addRow("Input File:", layout)
-    '''
-    # Provides direct execution of tractography files already loaded in Slicer
-    # Specified method (only useful when data name is atlas
-    def executeTractography():
-      self.inputFileSelector.clear()
-      fileNode = slicer.util.getNode('atlas')  
-      if fileNode is not None:  
-        storageNode = fileNode.GetStorageNode()
-        if storageNode is not None: 
-          filepath = storageNode.GetFullNameFromFileName()
-          self.inputFileSelector.setText(filepath)
-    # Choose method 
-    def showDataNodeNames():
-      self.inputFileSelector.clear()
-      dataNodeNames = slicer.util.getNodesByClass("vtkMRMLDataNode")
-      dialog = qt.QDialog()
-      dialog.setWindowTitle("Data Node Selection")
-      layout = qt.QVBoxLayout(dialog)
-      label = qt.QLabel("Select a data node:")
-      layout.addWidget(label)
-      combo = qt.QComboBox()
-      scene = slicer.mrmlScene
-      node_names = []
-      for i in range(scene.GetNumberOfNodes()):
-        node = scene.GetNthNodeByClass(i, "vtkMRMLNode")
-        # The node name is added only when the node type is vtkMRMLModelNode
-        if node.IsA("vtkMRMLModelNode"):
-          node_name = node.GetName()
-          node_names.append(node_name)
-          combo.addItem(node_name)
-
-      layout.addWidget(combo)
-      buttonBox = qt.QDialogButtonBox()
-      okButton = buttonBox.addButton(qt.QDialogButtonBox.Ok)
-      cancelButton = buttonBox.addButton(qt.QDialogButtonBox.Cancel)
-      layout.addWidget(buttonBox)
-
-      def accept():
-        selectedNodeName = str(combo.currentText)
-        fileNode = slicer.util.getNode(selectedNodeName)  
-        if fileNode is not None:  
-          storageNode = fileNode.GetStorageNode()
-          if storageNode is not None: 
-            filepath = storageNode.GetFullNameFromFileName()
-            self.inputFileSelector.setText(filepath)
-        dialog.accept()
-
-      okButton.connect("clicked()", accept)
-      cancelButton.connect("clicked()", dialog.reject)
-      dialog.exec_()
-      '''
-
     
-
-    '''
-    with It(qt.QPushButton("Execute")) as executeButton:
-        #executeButton.clicked.connect(executeTractography)
-        executeButton.clicked.connect(showDataNodeNames)
-    '''
-
     
-
-
     # load from slicer
     self.inputSelector = slicer.qMRMLNodeComboBox()
     self.inputSelector.nodeTypes = ["vtkMRMLFiberBundleNode"]
@@ -184,120 +169,13 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     self.inputSelector.setToolTip( "Pick the tractography data to use for input." )
     parametersFormLayout.addRow("Input FiberBundle: ", self.inputSelector)
 
-
-    #
-    # decide the source of input
-    #
-    def onLocalDiskButtonClicked():
-      self.x = self.inputFileGet.text
-      print(self.x)
-      
-    def onSlicerButtonClicked():
-      #self.x = self.inputSelector.currentNode()
-      #print(self.x)
-
+    self.selected_node = self.inputSelector.currentNode()
+    if self.selected_node is not None:
+      self.polydata = self.selected_node.GetPolyData()
       selectedNode = self.inputSelector.currentNode()
       if selectedNode is not None:
-          selectedNodeName = selectedNode.GetName()
-          print("选中的纤维束名称：", selectedNodeName)
-          if selectedNode.IsA("vtkMRMLFiberBundleNode"):
-              storageNode = selectedNode.GetStorageNode()
-              if storageNode is not None:
-                  # 如果存在关联的存储节点，获取文件路径属性
-                  filePathProperty = selectedNode.GetNodeReferenceID("FileName")
-                  if filePathProperty != "":
-                      filePath = slicer.mrmlScene.GetNodeByID(filePathProperty).GetAttribute("FileName")
-                      print("纤维束文件路径：", filePath)
-                  else:
-                      print("纤维束节点没有关联的文件路径属性。")
-              else:
-                  print("纤维束节点没有关联的存储节点。")
-      else:
-          print("未选择纤维束节点。")
-
-      '''
-      selectedNode = self.inputSelector.currentNode()
-      if selectedNode is not None:
-          selectedNodeName = str(selectedNode.GetName())
-          print("Selected fiber bundle name:", selectedNodeName)
-          filepath = slicer.util.getNode(selectedNodeName).GetStorageNode().GetFileName()
-          print(filepath)
-      '''
-      '''
-          fileNode = slicer.util.getNode(selectedNodeName)  
-          if fileNode is not None:  
-            storageNode = fileNode.GetStorageNode()
-            
-            print(storageNode)
-            if storageNode is not None: 
-              print('3')
-              filepath2 = storageNode.GetFullNameFromFileName()
-              print(filepath2)  
-            else:
-              print('2')
-          else:
-            print('1')
-            
-            
-
-      else:
-          print("未选择纤维束节点。")
-      '''
-      '''
-      selectedNodeID = self.inputSelector.currentNodeID
-      if selectedNodeID != "":
-          selectedNode = slicer.mrmlScene.GetNodeByID(selectedNodeID)
-          print(selectedNodeID)
-          storageNode = selectedNode.GetStorageNode()
-          if storageNode is not None:
-              filepath = storageNode.GetFullNameFromFileName()
-              print("选中的纤维束路径：", filepath)
-          else:
-              print("纤维束节点没有关联的存储节点。")
-      else:
-          print("未选择纤维束节点。")
-      '''
-      
-      '''
-      if selectedNode is not None:
-          storageNode = selectedNode.GetStorageNode()
-          if storageNode is not None:
-              filePath = storageNode.GetFullNameFromFileName()
-              print("选中的FiberBundle路径:", filePath)
-          else:
-            print("The selected FiberBundle node has no associated storage node")
-      else:
-      print("No FiberBundle nodes are selected")
-      '''
-
-    
-    # create the box for choosing the source of the file
-    widget = slicer.qMRMLWidget()
-    widget.setLayout(qt.QVBoxLayout())  
-
-    groupBox = qt.QGroupBox()
-    groupBox.setLayout(qt.QVBoxLayout())  
-    widget.layout().addWidget(groupBox)
-
-    titleLabel = qt.QLabel("Choose the source of the input file involved")
-    groupBox.layout().addWidget(titleLabel)
-
-    buttonGroup = qt.QButtonGroup()
-
-    # Create the "From Local Disk" button
-    localDiskButton = qt.QRadioButton("From Local Disk")
-    buttonGroup.addButton(localDiskButton)
-    groupBox.layout().addWidget(localDiskButton)
-
-    # Create the "From Slicer" button
-    slicerButton = qt.QRadioButton("From Slicer")
-    buttonGroup.addButton(slicerButton)
-    groupBox.layout().addWidget(slicerButton)
-
-    localDiskButton.connect('clicked()', onLocalDiskButtonClicked)
-    slicerButton.connect('clicked()', onSlicerButtonClicked)
-
-    parametersFormLayout.addRow("", widget)
+          self.selectedNodeName = selectedNode.GetName()
+          print("Selected fiber bundle name:", self.selectedNodeName)      
 
     #
     # Output folder selector
@@ -360,8 +238,8 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
     with It(qt.QComboBox()) as w:
         self.regModeSelector = w
-        w.addItem("rig")
-        w.addItem("nonrig")
+        w.addItem("affine")
+        w.addItem("affine + nonlinear")
         w.setToolTip("Choose the type of the regmode")
         parametersFormLayout.addRow("RegMode: ", self.regModeSelector)
 
@@ -400,13 +278,26 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     except Exception as e:
       logging.error(str(e))
       self.ui.wmaInstallationInfo.text = "unknown (corrupted installation?)"
-    
+
     try:
       self.atlasExisted, msg = self.logic.checkAtlasExist()
-      self.ui.atlasDownloadInfo.text = msg
+
+      # Get and display the ORG-Atlases version 
+      if self.atlasExisted:
+        atlasBasepath = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'Resources')
+        atlas_p_file = glob.glob(os.path.join(atlasBasepath, 'ORG-Atlases*', 'ORG-800FC-100HCP', 'atlas.p' ))[0]
+        version_match = re.search(r'ORG-Atlases-(\d+(\.\d+){0,5})', atlas_p_file)
+        if version_match:
+            version = version_match.group(1)
+            self.ui.atlasDownloadInfo.text = f"Installed (Version: {version})"
+        else:
+            self.ui.atlasDownloadInfo.text = "Installed (Version: unknown)"
+      else:
+        self.ui.atlasDownloadInfo.text = msg
     except Exception as e:
       logging.error(str(e))
       self.ui.atlasDownloadInfo.text = "unknown (corrupted download process?)"
+    
 
   def onInstallWMA(self):
     self.ui.wmaInstallationInfo.text = "Installing WMA..."
@@ -445,8 +336,10 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     self.statusLabel.setText("")
     logic = AnatomcalTractParcellationLogic()
     logic.run(
-              self.x,
-              #self.inputFolderSelector.text,
+              self.loadmode,
+              self.inputFileGet.text,
+              self.selectedNodeName,
+              self.polydata,
               self.outputFolderSelector.text,
               RegMode = self.regModeSelector.currentText,
               CleanMode = self.CleanFilesSelector.checked,
@@ -511,10 +404,10 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     try:
       atlas_p_file = glob.glob(os.path.join(atlasBasepath, 'ORG-Atlases*', 'ORG-800FC-100HCP', 'atlas.p' ))[0]
       exist = True
-      atlasmsg = "Exist"
+      atlasmsg = "Installed"
     except Exception as e:
       exist = False
-      atlasmsg = "Not Exist"
+      atlasmsg = "Not installed"
       logging.warning("Can not find ORG atlas. Try to download.")
 
     return exist, atlasmsg
@@ -581,6 +474,27 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     input_pd_fnames = glob.glob(input_mask) + glob.glob(input_mask2)
     input_pd_fnames = sorted(input_pd_fnames)
     return(input_pd_fnames)
+
+  def write_polydata(self, polydata, filename):
+    """Write polydata as vtkPolyData format, according to extension."""
+
+    print("Writing ", filename, "...")
+
+    basename, extension = os.path.splitext(filename)
+
+    writer = vtk.vtkXMLPolyDataWriter()
+    writer.SetDataModeToBinary()
+
+    writer.SetFileName(filename)
+    if (vtk.vtkVersion().GetVTKMajorVersion() >= 6.0):
+        writer.SetInputData(polydata)
+    else:
+        writer.SetInput(polydata)
+    writer.Update()
+
+    del writer
+
+    print("Done writing ", filename)
 
   def harden_transform(self, polydata, transform_node, inverse, outdir):
     #apply harden transform with slicer
@@ -669,7 +583,19 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     number_of_results = len(output_polydatas)
     print("<wm_harden_transform_with_slicer> Transform were conducted for", number_of_results, "subjects.")
 
-  def run(self, x, outputFolderPath, RegMode, CleanMode, NumThreads):
+  def run(self, loadmode, inputFilePath, selectedNodeName, polydata, outputFolderPath, RegMode, CleanMode, NumThreads):
+
+      if loadmode == 'slicer':
+        TransformFolder = os.path.join(outputFolderPath, "TransformFiles")
+        os.makedirs(TransformFolder)
+        self.write_polydata(polydata, os.path.join(TransformFolder, selectedNodeName + ".vtp"))
+        input_tractography_path = os.path.join(TransformFolder, selectedNodeName + ".vtp")
+        print(input_tractography_path)
+
+      elif loadmode == 'disk':
+        input_tractography_path = inputFilePath
+        print(input_tractography_path)
+      
 
       if os.name == 'posix':
           # Execute code for Unix-like operating systems
@@ -680,9 +606,8 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
           print("Running on Windows")
           location = 'script'
 
-
       # Get CaseID 
-      filename = os.path.basename(x)
+      filename = os.path.basename(input_tractography_path)
       caseID = os.path.splitext(filename)[0]
 
       # Setup output
@@ -705,7 +630,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       AtlasBaseFolder = str(glob.glob(os.path.join(atlasBasepath, 'ORG-Atlases*'))[0])
       
       #AtlasBaseFolder = os.path.dirname(os.path.dirname(inputFilePath))
-      input_tractography_path = x
+      
       RegAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-RegAtlas-100HCP')
       FCAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-800FC-100HCP')
       pythonSlicerExecutablePath = AnatomcalTractParcellationLogic._executePythonModule()
@@ -716,12 +641,12 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       print("")
       print("<wm_apply_ORG_atlas_to_subject> Tractography registration with mode [", RegMode, "]")
       RegistrationFolder = os.path.join(outputFolderPath, 'TractRegistration')
-      print("input_tractography_path:",x)
+      print("input_tractography_path:",input_tractography_path)
      
       #start registration  
       wm_register_to_atlas_new = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_register_to_atlas_new.py" in str(p)][0]
       wm_register_to_atlas_new = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_register_to_atlas_new.py')
-      if RegMode == "rig":
+      if RegMode == "affine":
           RegTractography = os.path.join(RegistrationFolder, caseID, "output_tractography", caseID+"_reg.vtk")
           
           if not os.path.isfile(RegTractography):
@@ -734,7 +659,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
           else:
               print(" - registration has been done.")
 
-      elif RegMode == "nonrig":
+      elif RegMode == "affine + nonlinear":
           RegTractography = os.path.join(RegistrationFolder, caseID+"_reg", "output_tractography", caseID+"_reg_reg.vtk")
 
           if not os.path.isfile(RegTractography):
@@ -847,14 +772,14 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       FCcaseID_outlier_removed = os.path.join(FiberClusteringOutlierRemFolder, f"{FCcaseID}_outlier_removed")
       
       # Apply transforms
-      if RegMode == "rig":
+      if RegMode == "affine":
           if not os.path.exists(os.path.join(FiberClustersInTractographySpace, 'cluster_00800.vtp')):
               
               self.python_harden_transform(FCcaseID_outlier_removed, FiberClustersInTractographySpace, tfm_rig, NumThreads)
               
           else: 
               print(" - transform has been done.")
-      elif RegMode == "nonrig":
+      elif RegMode == "affine + nonlinear":
           if not os.path.exists(os.path.join(FiberClustersInTractographySpace_tmp, 'cluster_00800.vtp')):  
               
               self.python_harden_transform(FCcaseID_outlier_removed, FiberClustersInTractographySpace_tmp, tfm_nonrig, NumThreads)     

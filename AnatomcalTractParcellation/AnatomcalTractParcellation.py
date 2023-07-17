@@ -27,8 +27,8 @@ class AnatomcalTractParcellation(ScriptedLoadableModule):
     self.parent.title = "AnatomcalTractParcellation" # TODO make this more human readable by adding spaces
     self.parent.categories = ["Diffusion.WMA"]
     self.parent.dependencies = []
-    self.parent.contributors = ["Fan Zhang (UESTC, BWH, HMS)"]
-    self.parent.helpText = "This module is applying a pre-provided anatomically curated white matter atlas, \
+    self.parent.contributors = ["Fan Zhang (UESTC, BWH, HMS), Kening Zhang (UESTC), Lauren O'Donnell (BWH, HMS)"]
+    self.parent.helpText = "This module is applying the anatomically curated white matter atlas (the ORG atlas), \
                             along with the computation tools provided in whitematteranalysis, \
                             to perform subject-specific tractography parcellation."
     self.parent.helpText += self.getDefaultModuleDocumentationLink()
@@ -42,7 +42,6 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
   def __init__(self, parent=None):
         super(AnatomcalTractParcellationWidget, self).__init__(parent)
-        # 其他初始化代码...
 
 
   def setup(self):
@@ -83,7 +82,6 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     # Input parameters area
     #
-
     self.inputsCollapsibleButton = ctk.ctkCollapsibleButton()
     self.inputsCollapsibleButton.text = "IO"
     self.layout.addWidget(self.inputsCollapsibleButton)
@@ -116,6 +114,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
         self.inputFileGet = w
         w.setReadOnly(True)
         w.setToolTip("Select input file")
+    
     # create the box for choosing the source of the file
     widget = slicer.qMRMLWidget()
     widget.setLayout(qt.QVBoxLayout())  
@@ -126,34 +125,52 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
     buttonGroup = qt.QButtonGroup()
 
+    # Create the "From Slicer" button
+    slicerButton = qt.QRadioButton("From Slicer")
+    buttonGroup.addButton(slicerButton)
+    groupBox.layout().addWidget(slicerButton)
+
     # Create the "From Local Disk" button
-    localfileButton = qt.QRadioButton("Input from local file")
+    localfileButton = qt.QRadioButton("From File")
     buttonGroup.addButton(localfileButton)
     groupBox.layout().addWidget(localfileButton)
 
     # Create the "From Local Disk" button
-    localdirectoryButton = qt.QRadioButton("Input from local directory")
+    localdirectoryButton = qt.QRadioButton("From Directory")
     buttonGroup.addButton(localdirectoryButton)
     groupBox.layout().addWidget(localdirectoryButton)
 
-    # Create the "From Slicer" button
-    slicerButton = qt.QRadioButton("Input from Slicer")
-    buttonGroup.addButton(slicerButton)
-    groupBox.layout().addWidget(slicerButton)
-
     groupBox.layout().addStretch(1)
 
+    slicerButton.connect('clicked()', onSlicerButtonClicked)
     localfileButton.connect('clicked()', onlocalfileButtonClicked)
     localdirectoryButton.connect('clicked()', onlocaldirectoryButtonClicked)
-    slicerButton.connect('clicked()', onSlicerButtonClicked)
     
-
     parametersFormLayout.addRow("", widget)
+
+    #  
+    # load from slicer
+    #
+    self.inputSelector = slicer.qMRMLNodeComboBox()
+    self.inputSelector.nodeTypes = ["vtkMRMLFiberBundleNode"]
+    self.inputSelector.selectNodeUponCreation = True
+    self.inputSelector.addEnabled = False
+    self.inputSelector.removeEnabled = False
+    self.inputSelector.noneEnabled = False
+    self.inputSelector.showHidden = False
+    self.inputSelector.showChildNodeTypes = False
+    self.inputSelector.setMRMLScene( slicer.mrmlScene )
+    self.inputSelector.setToolTip( "Pick the tractography data to use for input." )
+    parametersFormLayout.addRow("Input FiberBundle: ", self.inputSelector)
+
+    self.onNodeSelectionChanged()
+
+    # The callback function for connecting the selected node
+    self.inputSelector.currentNodeChanged.connect(self.onNodeSelectionChanged)
 
     #
     # Input file selector
     #
-
     def selectInputFile():
       self.inputFileGet.clear()
       inputFile = qt.QFileDialog.getOpenFileName(self.parent, "Select input file")
@@ -172,7 +189,6 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     # Input folder selector
     #
-    
     with It(qt.QLineEdit()) as w:
         self.inputFolderSelector = w
         w.setReadOnly(True)
@@ -190,27 +206,6 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     layout.addWidget(self.inputFolderSelector)
     layout.addWidget(button)
     parametersFormLayout.addRow("Input Folder:", layout)
-
-    #  
-    # load from slicer
-    #
-
-    self.inputSelector = slicer.qMRMLNodeComboBox()
-    self.inputSelector.nodeTypes = ["vtkMRMLFiberBundleNode"]
-    self.inputSelector.selectNodeUponCreation = True
-    self.inputSelector.addEnabled = False
-    self.inputSelector.removeEnabled = False
-    self.inputSelector.noneEnabled = False
-    self.inputSelector.showHidden = False
-    self.inputSelector.showChildNodeTypes = False
-    self.inputSelector.setMRMLScene( slicer.mrmlScene )
-    self.inputSelector.setToolTip( "Pick the tractography data to use for input." )
-    parametersFormLayout.addRow("Input FiberBundle: ", self.inputSelector)
-
-    self.onNodeSelectionChanged()
-
-    # The callback function for connecting the selected node
-    self.inputSelector.currentNodeChanged.connect(self.onNodeSelectionChanged)
 
     #
     # Output folder selector

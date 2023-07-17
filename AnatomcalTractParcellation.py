@@ -33,17 +33,16 @@ class AnatomcalTractParcellation(ScriptedLoadableModule):
                             to perform subject-specific tractography parcellation."
     self.parent.helpText += self.getDefaultModuleDocumentationLink()
     self.parent.acknowledgementText = ""
-    super(AnatomcalTractParcellationWidget, self).__init__(parent)
-    self.loadmode = None  # Initialize self.loadmode, self.selectedNodeName, self.polydata, self.inputFileGet.text to None
-    self.selectedNodeName = None
-    self.polydata = None
-    self.inputFileGet.text = None
-
+    
 #
 # AnatomcalTractParcellationWidget
 #
 
 class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
+
+  def __init__(self, parent=None):
+        super(AnatomcalTractParcellationWidget, self).__init__(parent)
+        # 其他初始化代码...
 
 
   def setup(self):
@@ -91,11 +90,15 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout = qt.QFormLayout(self.inputsCollapsibleButton)
     self.downloadAtlasButton.connect('clicked(bool)', self.onDownloadAtlas)
 
+    self.loadmode = None  # Initialize self.loadmode
+
     #
     # decide the source of input
     #
     def onLocalDiskButtonClicked():
       self.loadmode = "disk"
+      self.selectedNodeName = None
+      self.polydata = None
       print("load mode:",self.loadmode)
 
     def onSlicerButtonClicked():
@@ -155,7 +158,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #layout.addWidget(executeButton)
     parametersFormLayout.addRow("Input File:", layout)
     
-    
+
     # load from slicer
     self.inputSelector = slicer.qMRMLNodeComboBox()
     self.inputSelector.nodeTypes = ["vtkMRMLFiberBundleNode"]
@@ -169,13 +172,11 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     self.inputSelector.setToolTip( "Pick the tractography data to use for input." )
     parametersFormLayout.addRow("Input FiberBundle: ", self.inputSelector)
 
-    self.selected_node = self.inputSelector.currentNode()
-    if self.selected_node is not None:
-      self.polydata = self.selected_node.GetPolyData()
-      selectedNode = self.inputSelector.currentNode()
-      if selectedNode is not None:
-          self.selectedNodeName = selectedNode.GetName()
-          print("Selected fiber bundle name:", self.selectedNodeName)      
+    self.onNodeSelectionChanged()
+
+    # 连接选择节点时的回调函数
+    self.inputSelector.currentNodeChanged.connect(self.onNodeSelectionChanged)
+
 
     #
     # Output folder selector
@@ -264,12 +265,19 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
         w.singleStep = 1
         w.setToolTip("control the NumThreads value")
         parametersFormLayout.addRow("NumThreads: ",self.NumThreadsSelector)
-    
+  
+  def onNodeSelectionChanged(self):
+    self.selected_node = self.inputSelector.currentNode()
+    if self.selected_node is not None:
+        self.polydata = self.selected_node.GetPolyData()
+        self.selectedNodeName = self.selected_node.GetName()
+        print("Selected fiber bundle name:", self.selectedNodeName)
+        
+
   def updateMsgInformation(self):
   # Check Xcode Command Line Tools installation
     if os.name == 'posix':
       self.logic.check_install_xcode_cli()
-
 
   #update the status of the wma and atlas
     try:
@@ -586,17 +594,21 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
   def run(self, loadmode, inputFilePath, selectedNodeName, polydata, outputFolderPath, RegMode, CleanMode, NumThreads):
 
       if loadmode == 'slicer':
-        TransformFolder = os.path.join(outputFolderPath, "TransformFiles")
-        os.makedirs(TransformFolder)
-        self.write_polydata(polydata, os.path.join(TransformFolder, selectedNodeName + ".vtp"))
-        input_tractography_path = os.path.join(TransformFolder, selectedNodeName + ".vtp")
+        filename = os.path.join(outputFolderPath, selectedNodeName + ".vtp")
+        #Prevents write files from being overwritten
+        count = 1
+        basename, extension = os.path.splitext(filename)
+        while os.path.exists(filename):
+            filename = f"{basename}({count}){extension}"
+            count += 1
+        self.write_polydata(polydata, filename)
+        input_tractography_path = filename
         print(input_tractography_path)
 
       elif loadmode == 'disk':
         input_tractography_path = inputFilePath
         print(input_tractography_path)
       
-
       if os.name == 'posix':
           # Execute code for Unix-like operating systems
           print("Running on a UNIX-like system")

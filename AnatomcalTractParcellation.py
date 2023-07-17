@@ -953,6 +953,13 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         os.system(f"rm -rf {outputFolderPath}/FiberClustering/InitialClusters")
         os.system(f"rm -rf {outputFolderPath}/FiberClustering/TransformedClusters")
 
+    scene = slicer.mrmlScene
+      for node in scene.GetNodesByClass('vtkMRMLNode'):
+          # Check whether the node name starts with "cluster"
+          if node.GetName().startswith('cluster'):
+              # Remove nodes from the scene
+              scene.RemoveNode(node)
+
     if loadmode == "localdirectory":
       pass
     else:  
@@ -967,12 +974,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
                   print(f"Error loading VTP file: {file_path}")
                   print(f"Error message: {str(e)}")
 
-      scene = slicer.mrmlScene
-      for node in scene.GetNodesByClass('vtkMRMLNode'):
-          # Check whether the node name starts with "cluster"
-          if node.GetName().startswith('cluster'):
-              # Remove nodes from the scene
-              scene.RemoveNode(node)
+      
 
   def run(self, loadmode, inputFilePath, inputFolderPath, selectedNodeName, polydata, outputFolderPath, RegMode, CleanMode, NumThreads):
 

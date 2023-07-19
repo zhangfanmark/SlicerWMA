@@ -10,6 +10,7 @@ import multiprocessing
 import shutil
 
 
+
 # helper class for cleaner multi-operation blocks on a single node.
 class It(object):
   def __init__(self, node): self.node = node
@@ -56,6 +57,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     uiWidget = slicer.util.loadUI(self.resourcePath('UI/AnatomcalTractParcellation.ui'))
     self.layout.addWidget(uiWidget)
     self.ui = slicer.util.childWidgetVariables(uiWidget)
+    uiWidget.setMinimumHeight(60)
     self.updateMsgInformation()
     self.statusLabel = qt.QLabel()
 
@@ -303,7 +305,9 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
         print("Selected fiber bundle name:", self.selectedNodeName)
         
 
+
   def updateMsgInformation(self):
+    
   # Check Xcode Command Line Tools installation
     if os.name == 'posix':
       self.logic.check_install_xcode_cli()
@@ -649,7 +653,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     elif os.name == 'nt':
         # Execute code for Windows operating systems
         print("Running on Windows")
-        location = 'script'
+        location = 'Scripts'
 
     # Get CaseID 
     filename = os.path.basename(input_tractography_path)
@@ -999,7 +1003,4 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
           newoutputFolder = os.path.join(outputFolderPath, file_name_without_ext)
           self.Mainoperation(loadmode, listfile, newoutputFolder, RegMode, CleanMode, NumThreads)
 
-
-
-
-      
+   

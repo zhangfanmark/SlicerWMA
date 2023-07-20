@@ -1,4 +1,4 @@
-import os, re, unittest, warnings
+import os, unittest, warnings
 import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 import logging
@@ -130,16 +130,19 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     # Create the "From Slicer" button
     slicerButton = qt.QRadioButton("From Slicer")
     buttonGroup.addButton(slicerButton)
+    slicerButton.setToolTip("The fiber bundle file involved in whitematteranalysis entered is the data loaded into slicer")
     groupBox.layout().addWidget(slicerButton)
 
     # Create the "From Local Disk" button
     localfileButton = qt.QRadioButton("From File")
     buttonGroup.addButton(localfileButton)
+    localfileButton.setToolTip("The fiber bundle File involved in whitematteranalysis entered is the file path of the local disk selected in the Input File")
     groupBox.layout().addWidget(localfileButton)
 
     # Create the "From Local Disk" button
     localdirectoryButton = qt.QRadioButton("From Directory")
     buttonGroup.addButton(localdirectoryButton)
+    localdirectoryButton.setToolTip("The fiber bundle files involved in whitematteranalysis are all vtp and vtk files under the file path selected in the Input Folder")
     groupBox.layout().addWidget(localdirectoryButton)
 
     groupBox.layout().addStretch(1)
@@ -273,7 +276,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
         w.addItem("affine")
         w.addItem("affine + nonlinear")
         w.setToolTip("Choose the type of the regmode")
-        parametersFormLayout.addRow("RegMode: ", self.regModeSelector)
+        parametersFormLayout.addRow("Registration mode: ", self.regModeSelector)
 
     #
     # CleanMode selector
@@ -295,7 +298,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
         w.maximum = 8
         w.singleStep = 1
         w.setToolTip("control the NumThreads value")
-        parametersFormLayout.addRow("NumThreads: ",self.NumThreadsSelector)
+        parametersFormLayout.addRow("Number of threads: ",self.NumThreadsSelector)
   
   def onNodeSelectionChanged(self):
     self.selected_node = self.inputSelector.currentNode()
@@ -322,14 +325,13 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
     try:
       self.atlasExisted, msg = self.logic.checkAtlasExist()
-
       # Get and display the ORG-Atlases version 
       if self.atlasExisted:
         atlasBasepath = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'Resources')
-        atlas_p_file = glob.glob(os.path.join(atlasBasepath, 'ORG-Atlases*', 'ORG-800FC-100HCP', 'atlas.p' ))[0]
-        version_match = re.search(r'ORG-Atlases-(\d+(\.\d+){0,5})', atlas_p_file)
-        if version_match:
-            version = version_match.group(1)
+        atlas_p_file = glob.glob(os.path.join(atlasBasepath, 'ORG-Atlases*'))[0]
+        Versionpart = atlas_p_file.split("/")
+        version = Versionpart[-1].replace("ORG-Atlases-", "")
+        if version:
             self.ui.atlasDownloadInfo.text = f"Installed (Version: {version})"
         else:
             self.ui.atlasDownloadInfo.text = "Installed (Version: unknown)"
@@ -752,8 +754,8 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
                       FiberClusteringInitialFolder,
                       '-norender'
                   ]                       
-        process = subprocess.Popen(commandLine, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)                        
-        process.wait() 
+        proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
+        slicer.util.logProcessOutput(proc) 
 
     else:
         print(" - initial fiber clustering has been done.")
@@ -782,8 +784,8 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
                       FCAtlasFolder,
                       FiberClusteringOutlierRemFolder,
                   ]
-        process = subprocess.Popen(commandLine, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-        process.wait() 
+        proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
+        slicer.util.logProcessOutput(proc) 
 
     else:
         print(" - outlier fiber removal has been done.")
@@ -798,7 +800,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     print("<wm_apply_ORG_atlas_to_subject> Hemisphere location assessment in the atlas space.")
     if not os.path.isfile(os.path.join(FiberClusteringOutlierRemFolder, f"{FCcaseID}_outlier_removed/cluster_location_by_hemisphere.log")):
         wm_assess_cluster_location_by_hemisphere = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_assess_cluster_location_by_hemisphere.py" in str(p)][0]
-        wm_assess_cluster_location_by_hemisphere = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', 'bin', 'wm_assess_cluster_location_by_hemisphere.py')
+        wm_assess_cluster_location_by_hemisphere = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_assess_cluster_location_by_hemisphere.py')
         commandLine = [pythonSlicerExecutablePath, wm_assess_cluster_location_by_hemisphere, '-clusterLocationFile', os.path.join(FCAtlasFolder, "cluster_hemisphere_location.txt"), os.path.join(FiberClusteringOutlierRemFolder, f"{FCcaseID}_outlier_removed")]
         proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
         slicer.util.logProcessOutput(proc)
@@ -890,6 +892,8 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     
     #start diffusion
     FiberTractMeasurementsCLI = slicer.modules.fibertractmeasurements.path #find and store the path of cli-module "FiberTractMeasurements"
+    if os.name == 'nt':
+      FiberTractMeasurementsCLI = FiberTractMeasurementsCLI.replace("/", "\\")
     wm_diffusion_measurements = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_diffusion_measurements.py" in str(p)][0]
     wm_diffusion_measurements = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_diffusion_measurements.py')
     print("<wm_apply_ORG_atlas_to_subject> Report diffusion measurements of fiber clusters.")
@@ -1002,5 +1006,3 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
           file_name_without_ext, file_ext = os.path.splitext(file_name)
           newoutputFolder = os.path.join(outputFolderPath, file_name_without_ext)
           self.Mainoperation(loadmode, listfile, newoutputFolder, RegMode, CleanMode, NumThreads)
-
-   

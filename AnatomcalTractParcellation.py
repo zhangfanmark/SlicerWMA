@@ -2,6 +2,7 @@ import os, vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 import logging, subprocess, shutil
 import importlib.metadata, glob
+import platform
 
 
 # helper class for cleaner multi-operation blocks on a single node.
@@ -305,7 +306,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
   def updateMsgInformation(self):
     
   # Check Xcode Command Line Tools installation
-    if os.name == 'posix':
+    if platform.system() == 'Darwin':
       self.logic.check_install_xcode_cli()
 
   #update the status of the wma and atlas
@@ -987,16 +988,3 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         input_tractography_path = filename
         print(input_tractography_path)
         self.Mainoperation(loadmode, input_tractography_path, outputFolderPath, RegMode, CleanMode, NumThreads)
-
-      elif loadmode == 'localfile':
-        input_tractography_path = inputFilePath
-        print(input_tractography_path)
-        self.Mainoperation(loadmode, input_tractography_path, outputFolderPath, RegMode, CleanMode, NumThreads)
-
-      elif loadmode == "localdirectory":
-        listfiles = self.list_vtk_files(inputFolderPath)
-        for listfile in listfiles:
-          file_name = os.path.basename(listfile)
-          file_name_without_ext, file_ext = os.path.splitext(file_name)
-          newoutputFolder = os.path.join(outputFolderPath, file_name_without_ext)
-          self.Mainoperation(loadmode, listfile, newoutputFolder, RegMode, CleanMode, NumThreads)

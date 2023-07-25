@@ -867,9 +867,12 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     
     # Start diffusion
     FiberTractMeasurementsCLI = slicer.modules.fibertractmeasurements.path #find and store the path of cli-module "FiberTractMeasurements"
-    if os.name == 'nt':
+    if platform.system() == 'Windows':
       slicerlauncher = os.path.join(os.path.dirname(os.path.dirname(slicer.app.slicerHome)), "Slicer.exe")
       FiberTractMeasurementsCLI = f'"{slicerlauncher} --launch {FiberTractMeasurementsCLI}"'
+    if platform.system() == 'Linux':
+      slicerlauncher = os.path.join(os.path.dirname(os.path.dirname(slicer.app.slicerHome)), "Slicer")
+      FiberTractMeasurementsCLI = f'{slicerlauncher} --launch {FiberTractMeasurementsCLI}'
     wm_diffusion_measurements = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_diffusion_measurements.py" in str(p)][0]
     wm_diffusion_measurements = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_diffusion_measurements.py')
     print("<wm_apply_ORG_atlas_to_subject> Report diffusion measurements of fiber clusters.")
@@ -988,3 +991,16 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         input_tractography_path = filename
         print(input_tractography_path)
         self.Mainoperation(loadmode, input_tractography_path, outputFolderPath, RegMode, CleanMode, NumThreads)
+
+      elif loadmode == 'localfile':
+        input_tractography_path = inputFilePath
+        print(input_tractography_path)
+        self.Mainoperation(loadmode, input_tractography_path, outputFolderPath, RegMode, CleanMode, NumThreads)
+
+      elif loadmode == "localdirectory":
+        listfiles = self.list_vtk_files(inputFolderPath)
+        for listfile in listfiles:
+          file_name = os.path.basename(listfile)
+          file_name_without_ext, file_ext = os.path.splitext(file_name)
+          newoutputFolder = os.path.join(outputFolderPath, file_name_without_ext)
+          self.Mainoperation(loadmode, listfile, newoutputFolder, RegMode, CleanMode, NumThreads)

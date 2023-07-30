@@ -1,14 +1,8 @@
-import os, unittest, warnings
-import vtk, qt, ctk, slicer
+import os, vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
-import logging
-import numpy as np
-import subprocess
-import importlib.metadata, glob, time
-import argparse
-import multiprocessing
-import shutil
-
+import logging, subprocess, shutil
+import importlib.metadata, glob
+import platform
 
 
 # helper class for cleaner multi-operation blocks on a single node.
@@ -312,7 +306,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
   def updateMsgInformation(self):
     
   # Check Xcode Command Line Tools installation
-    if os.name == 'posix':
+    if platform.system() == 'Darwin':
       self.logic.check_install_xcode_cli()
 
   #update the status of the wma and atlas
@@ -329,7 +323,10 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
       if self.atlasExisted:
         atlasBasepath = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'Resources')
         atlas_p_file = glob.glob(os.path.join(atlasBasepath, 'ORG-Atlases*'))[0]
-        Versionpart = atlas_p_file.split("/")
+        if os.name == 'posix':
+          Versionpart = atlas_p_file.split("/")
+        elif os.name == 'nt':
+          Versionpart = atlas_p_file.split("\\")
         version = Versionpart[-1].replace("ORG-Atlases-", "")
         if version:
             self.ui.atlasDownloadInfo.text = f"Installed (Version: {version})"
@@ -513,7 +510,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     return pythonSlicerExecutablePath
 
   def list_vtk_files(self, input_dir):
-    # Find input files (JUST vtk)
+    # Find input files (For vtk and vtp)
     input_mask = "{0}/*.vtk".format(input_dir)
     input_mask2 = f"{input_dir}/*.vtp"
     input_pd_fnames = glob.glob(input_mask) + glob.glob(input_mask2)
@@ -521,7 +518,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     return(input_pd_fnames)
 
   def write_polydata(self, polydata, filename):
-    """Write polydata as vtkPolyData format, according to extension."""
+    # Write polydata as vtkPolyData format, according to extension."""
 
     print("Writing ", filename, "...")
 
@@ -542,7 +539,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     print("Done writing ", filename)
 
   def harden_transform(self, polydata, transform_node, inverse, outdir):
-    #apply harden transform with slicer
+    # Apply harden transform with slicer
     polydata_base_path, polydata_name = os.path.split(polydata)
     output_name = os.path.join(outdir, polydata_name)
     
@@ -565,14 +562,14 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     logic = slicer.vtkSlicerTransformLogic()
     t_node_id = transform_node.GetID()
 
-    # harden transform
+    # Harden transform
     polydata_node.SetAndObserveTransformNodeID(t_node_id)
     logic.hardenTransform(polydata_node)
     slicer.util.saveNode(polydata_node, output_name)
 
   def python_harden_transform(self, inputDirectory, outputDirectory, transform_file, numberOfJobs, inverse_transform=True):
     
-    #set the initial settings and apply transform
+    # set the initial settings and apply transform
     inputdir = os.path.abspath(inputDirectory)
     if not os.path.isdir(inputDirectory):
         print("Error: Input directory", inputDirectory, "does not exist.")                
@@ -650,11 +647,9 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
 
     if os.name == 'posix':
         # Execute code for Unix-like operating systems
-        print("Running on a UNIX-like system")
         location = 'bin'
     elif os.name == 'nt':
         # Execute code for Windows operating systems
-        print("Running on Windows")
         location = 'Scripts'
 
     # Get CaseID 
@@ -680,8 +675,6 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     atlasBasepath = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'Resources')
     AtlasBaseFolder = str(glob.glob(os.path.join(atlasBasepath, 'ORG-Atlases*'))[0])
     
-    #AtlasBaseFolder = os.path.dirname(os.path.dirname(inputFilePath))
-    
     RegAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-RegAtlas-100HCP')
     FCAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-800FC-100HCP')
     pythonSlicerExecutablePath = AnatomcalTractParcellationLogic._executePythonModule()
@@ -694,28 +687,23 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     RegistrationFolder = os.path.join(outputFolderPath, 'TractRegistration')
     print("input_tractography_path:",input_tractography_path)
    
-    #start registration  
+    # Start registration  
     wm_register_to_atlas_new = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_register_to_atlas_new.py" in str(p)][0]
     wm_register_to_atlas_new = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_register_to_atlas_new.py')
     if RegMode == "affine":
         RegTractography = os.path.join(RegistrationFolder, caseID, "output_tractography", caseID+"_reg.vtk")
-        
         if not os.path.isfile(RegTractography):
             if input_tractography_path:
-
                 commandLine = [pythonSlicerExecutablePath, wm_register_to_atlas_new, "-mode", "rigid_affine_fast", input_tractography_path, os.path.join(RegAtlasFolder, "registration_atlas.vtk"), RegistrationFolder]
                 proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
                 slicer.util.logProcessOutput(proc)
-
         else:
             print(" - registration has been done.")
 
     elif RegMode == "affine + nonlinear":
         RegTractography = os.path.join(RegistrationFolder, caseID+"_reg", "output_tractography", caseID+"_reg_reg.vtk")
-
         if not os.path.isfile(RegTractography):
             if input_tractography_path:
-
                 commandLine = [pythonSlicerExecutablePath, wm_register_to_atlas_new, "-mode", "affine", input_tractography_path, os.path.join(RegAtlasFolder, "registration_atlas.vtk"), RegistrationFolder]
                 proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
                 slicer.util.logProcessOutput(proc)
@@ -723,7 +711,6 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
                 commandLine = [pythonSlicerExecutablePath, wm_register_to_atlas_new, "-mode", "nonrigid", affineRegTract, os.path.join(RegAtlasFolder, "registration_atlas.vtk"), RegistrationFolder]
                 proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
                 slicer.util.logProcessOutput(proc)
-               
         else:
             print(" - registration has been done.")
             
@@ -738,7 +725,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     fn = os.path.basename(RegTractography)
     FCcaseID = os.path.splitext(fn)[0]
     
-    #start fiber clustering
+    # Start fiber clustering
     print("<wm_apply_ORG_atlas_to_subject> Fiber clustering for whole-brain 800 fiber cluster parcellation.")
     print(f"Number of processors: {NumThreads}")
     FiberClusteringInitialFolder = os.path.join(outputFolderPath, "FiberClustering/InitialClusters")
@@ -756,7 +743,6 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
                   ]                       
         proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
         slicer.util.logProcessOutput(proc) 
-
     else:
         print(" - initial fiber clustering has been done.")
     print("")
@@ -772,8 +758,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     FiberClusteringOutlierRemFolder = os.path.join(outputFolderPath, "FiberClustering/OutlierRemovedClusters")
     print(os.path.join(FiberClusteringOutlierRemFolder, f"{FCcaseID}_outlier_removed", "cluster_00800.vtp"))
                                      
-    if not os.path.isfile(os.path.join(FiberClusteringOutlierRemFolder, f"{FCcaseID}_outlier_removed", "cluster_00800.vtp")):
-                                      
+    if not os.path.isfile(os.path.join(FiberClusteringOutlierRemFolder, f"{FCcaseID}_outlier_removed", "cluster_00800.vtp")):                                 
         wm_cluster_remove_outliers = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_cluster_remove_outliers.py" in str(p)][0]
         wm_cluster_remove_outliers = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_cluster_remove_outliers.py')
         commandLine = [
@@ -786,7 +771,6 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
                   ]
         proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
         slicer.util.logProcessOutput(proc) 
-
     else:
         print(" - outlier fiber removal has been done.")
     print("")
@@ -814,7 +798,6 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         print("ERROR: Hemisphere location assessment failed. There should be a cluster_location_by_hemisphere.log file, stating: \"<wm_assess_cluster_location_by_hemisphere.py> Done!!!\" ")
         print("")
         
-    ## notice!
     # Set input and output paths
     FiberClustersInTractographySpace = os.path.join(outputFolderPath, 'FiberClustering', 'TransformedClusters', f"{caseID}")
     tfm_rig = os.path.join(RegistrationFolder, f"{caseID}", 'output_tractography', f"itk_txform_{caseID}.tfm")
@@ -824,23 +807,17 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     
     # Apply transforms
     if RegMode == "affine":
-        if not os.path.exists(os.path.join(FiberClustersInTractographySpace, 'cluster_00800.vtp')):
-            
-            self.python_harden_transform(FCcaseID_outlier_removed, FiberClustersInTractographySpace, tfm_rig, NumThreads)
-            
+        if not os.path.exists(os.path.join(FiberClustersInTractographySpace, 'cluster_00800.vtp')):  
+            self.python_harden_transform(FCcaseID_outlier_removed, FiberClustersInTractographySpace, tfm_rig, NumThreads)            
         else: 
             print(" - transform has been done.")
     elif RegMode == "affine + nonlinear":
         if not os.path.exists(os.path.join(FiberClustersInTractographySpace_tmp, 'cluster_00800.vtp')):  
-            
             self.python_harden_transform(FCcaseID_outlier_removed, FiberClustersInTractographySpace_tmp, tfm_nonrig, NumThreads)     
-            
         else:
             print(" - transform has been done.")
-        if not os.path.exists(os.path.join(FiberClustersInTractographySpace, 'cluster_00800.vtp')):
-            
+        if not os.path.exists(os.path.join(FiberClustersInTractographySpace, 'cluster_00800.vtp')):           
             self.python_harden_transform(FiberClustersInTractographySpace_tmp, FiberClustersInTractographySpace, tfm_rig, NumThreads)
-           
         else:
             print(" - transform has been done.")
             
@@ -852,7 +829,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         print(f"ERROR: Transforming fiber clusters failed. There should be 800 resulting fiber clusters, but only {numfiles} generated.")
         print("")
     
-    #start separation
+    # Start separation
     print("<wm_apply_ORG_atlas_to_subject> Separate fiber clusters by hemisphere.")
     SeparatedClustersFolder = os.path.join(outputFolderPath, 'FiberClustering', 'SeparatedClusters')
     if not os.path.exists(os.path.join(SeparatedClustersFolder, 'tracts_commissural', 'cluster_00800.vtp')):
@@ -860,8 +837,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         wm_separate_clusters_by_hemisphere = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_separate_clusters_by_hemisphere.py')
         commandLine = [pythonSlicerExecutablePath, wm_separate_clusters_by_hemisphere, FiberClustersInTractographySpace, SeparatedClustersFolder]
         proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
-        slicer.util.logProcessOutput(proc)
-        
+        slicer.util.logProcessOutput(proc)       
     else:
         print(" - separation has been done.")
     print("")
@@ -870,7 +846,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     if numfiles < 800:
         print(f"\nERROR: Separating fiber clusters failed. There should be 800 resulting fiber clusters in each folder, but only {numfiles} generated.\n")
     
-    #start append    
+    # Start append    
     print("<wm_apply_ORG_atlas_to_subject> Append clusters into anatomical tracts.")
     AnatomicalTractsFolder = os.path.join(outputFolderPath, "AnatomicalTracts")
     if not os.path.exists(os.path.join(AnatomicalTractsFolder, "T_UF_right.vtp")):
@@ -879,7 +855,6 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         commandLine = [pythonSlicerExecutablePath, wm_append_clusters_to_anatomical_tracts, SeparatedClustersFolder, FCAtlasFolder, AnatomicalTractsFolder]
         proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
         slicer.util.logProcessOutput(proc)
-
     else:
         print(" - Appending clusters into anatomical tracts has been done.")
     print("")
@@ -890,32 +865,51 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         print("ERROR: Appending clusters into anatomical tracts failed. There should be 73 resulting fiber clusters, but only $numfiles generated.")
         print("")
     
-    #start diffusion
+    # Start diffusion
     FiberTractMeasurementsCLI = slicer.modules.fibertractmeasurements.path #find and store the path of cli-module "FiberTractMeasurements"
-    if os.name == 'nt':
-      FiberTractMeasurementsCLI = FiberTractMeasurementsCLI.replace("/", "\\")
+    if platform.system() == 'Windows':
+      slicerlauncher = os.path.join(os.path.dirname(os.path.dirname(slicer.app.slicerHome)), "Slicer.exe")
+      FiberTractMeasurementsCLI = f'"{slicerlauncher} --launch {FiberTractMeasurementsCLI}"'
+    if platform.system() == 'Linux':
+      slicerlauncher = os.path.join(os.path.dirname(os.path.dirname(slicer.app.slicerHome)), "Slicer")
+      FiberTractMeasurementsCLI = f'{slicerlauncher} --launch {FiberTractMeasurementsCLI}'
     wm_diffusion_measurements = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_diffusion_measurements.py" in str(p)][0]
     wm_diffusion_measurements = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_diffusion_measurements.py')
     print("<wm_apply_ORG_atlas_to_subject> Report diffusion measurements of fiber clusters.")
     if not os.path.isfile(os.path.join(SeparatedClustersFolder, "diffusion_measurements_commissural.csv")):
         commandLine = [pythonSlicerExecutablePath, wm_diffusion_measurements, os.path.join(SeparatedClustersFolder, "tracts_commissural"), os.path.join(SeparatedClustersFolder, "diffusion_measurements_commissural.csv"), FiberTractMeasurementsCLI]
-        proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
-        slicer.util.logProcessOutput(proc)
-
+        try:
+            proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
+            slicer.util.logProcessOutput(proc)
+        except subprocess.CalledProcessError as e:
+            print("Error executing command:")
+            print(e.cmd)
+            print("Error output:")
+            print(e.output)
     else:
         print(" - diffusion measurements of commissural clusters has been done.")
     if not os.path.isfile(os.path.join(SeparatedClustersFolder, "diffusion_measurements_left_hemisphere.csv")):
         commandLine = [pythonSlicerExecutablePath, wm_diffusion_measurements, os.path.join(SeparatedClustersFolder, "tracts_left_hemisphere"), os.path.join(SeparatedClustersFolder, "diffusion_measurements_left_hemisphere.csv"), FiberTractMeasurementsCLI]
-        proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
-        slicer.util.logProcessOutput(proc)
-        
+        try:
+            proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
+            slicer.util.logProcessOutput(proc)
+        except subprocess.CalledProcessError as e:
+            print("Error executing command:")
+            print(e.cmd)
+            print("Error output:")
+            print(e.output)       
     else:
         print(" - diffusion measurements of left hemisphere clusters has been done.")
     if not os.path.isfile(os.path.join(SeparatedClustersFolder, "diffusion_measurements_right_hemisphere.csv")):
         commandLine = [pythonSlicerExecutablePath, wm_diffusion_measurements, os.path.join(SeparatedClustersFolder, "tracts_right_hemisphere"), os.path.join(SeparatedClustersFolder, "diffusion_measurements_right_hemisphere.csv"), FiberTractMeasurementsCLI]
-        proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
-        slicer.util.logProcessOutput(proc)
-          
+        try:
+            proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
+            slicer.util.logProcessOutput(proc)
+        except subprocess.CalledProcessError as e:
+            print("Error executing command:")
+            print(e.cmd)
+            print("Error output:")
+            print(e.output)      
     else:
         print(" - diffusion measurements of right hemisphere clusters has been done.")
     if not os.path.isfile(os.path.join(SeparatedClustersFolder, "diffusion_measurements_right_hemisphere.csv")):
@@ -927,9 +921,14 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     csv_path = os.path.join(AnatomicalTractsFolder, "diffusion_measurements_anatomical_tracts.csv")
     if not os.path.isfile(csv_path):
       commandLine = [pythonSlicerExecutablePath, wm_diffusion_measurements, AnatomicalTractsFolder, csv_path, FiberTractMeasurementsCLI]
-      proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
-      slicer.util.logProcessOutput(proc)
-      
+      try:
+            proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
+            slicer.util.logProcessOutput(proc)
+      except subprocess.CalledProcessError as e:
+            print("Error executing command:")
+            print(e.cmd)
+            print("Error output:")
+            print(e.output)    
     else:
       print(" - diffusion measurements of anatomical tracts has been done.")
 
@@ -940,7 +939,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
       
     print("")
 
-    #Clear unnecessary intermediate results based on selection
+    # Clear unnecessary intermediate results based on selection
     if not CleanMode:
         print("<wm_apply_ORG_atlas_to_subject> Clean files using maximal removal.")
         os.system(f"rm -rf {outputFolderPath}/TractRegistration/*/output_tractography/*vtk")
@@ -966,7 +965,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     if loadmode == "localdirectory":
       pass
     else:  
-      #Load the generated anatomical tracts back into Slicer
+      # Load the generated anatomical tracts back into Slicer
       # Iterate over files in the AnatomicalTractsFolder
       for file_name in os.listdir(AnatomicalTractsFolder):
           if file_name.endswith(".vtp"):
@@ -978,7 +977,6 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
                   print(f"Error message: {str(e)}")
 
       
-
   def run(self, loadmode, inputFilePath, inputFolderPath, selectedNodeName, polydata, outputFolderPath, RegMode, CleanMode, NumThreads):
 
       if loadmode == 'slicer':

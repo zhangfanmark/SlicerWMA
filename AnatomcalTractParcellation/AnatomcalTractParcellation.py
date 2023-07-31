@@ -975,8 +975,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
               except Exception as e:
                   print(f"Error loading VTP file: {file_path}")
                   print(f"Error message: {str(e)}")
-
-      
+                
   def run(self, loadmode, inputFilePath, inputFolderPath, selectedNodeName, polydata, outputFolderPath, RegMode, CleanMode, NumThreads):
 
       if loadmode == 'slicer':

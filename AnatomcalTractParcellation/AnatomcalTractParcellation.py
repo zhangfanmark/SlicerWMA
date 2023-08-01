@@ -89,21 +89,45 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     # decide the source of input
     #
+    def onSlicerButtonClicked():
+      self.loadmode = "slicer"
+      # Interface interaction setting
+      self.inputSelector.setEnabled(True)
+      filebrowsebutton.setEnabled(False)
+      folderbrowsebutton.setEnabled(False)
+      outputbutton.setEnabled(True)
+      self.inputSelector.setStyleSheet("")
+      self.inputFileGet.setStyleSheet("background-color: #CCCCCC; color: #666666;")
+      self.inputFolderSelector.setStyleSheet("background-color: #CCCCCC; color: #666666;")
+      self.outputFolderSelector.setStyleSheet("")
+
     def onlocalfileButtonClicked():
       self.loadmode = "localfile"
       self.selectedNodeName = None
       self.polydata = None
-      print("load mode:",self.loadmode)
+      # Interface interaction setting
+      self.inputSelector.setEnabled(False)
+      filebrowsebutton.setEnabled(True)
+      folderbrowsebutton.setEnabled(False)
+      outputbutton.setEnabled(True)
+      self.inputSelector.setStyleSheet("background-color: #CCCCCC; color: #666666;")
+      self.inputFileGet.setStyleSheet("")
+      self.inputFolderSelector.setStyleSheet("background-color: #CCCCCC; color: #666666;")
+      self.outputFolderSelector.setStyleSheet("")
 
     def onlocaldirectoryButtonClicked():
       self.loadmode = "localdirectory"
       self.selectedNodeName = None
       self.polydata = None
-      print("load mode:",self.loadmode)
-
-    def onSlicerButtonClicked():
-      self.loadmode = "slicer"
-      print("load mode:",self.loadmode)
+      # Interface interaction setting
+      self.inputSelector.setEnabled(False)
+      filebrowsebutton.setEnabled(False)
+      folderbrowsebutton.setEnabled(True)
+      outputbutton.setEnabled(True)
+      self.inputSelector.setStyleSheet("background-color: #CCCCCC; color: #666666;")
+      self.inputFileGet.setStyleSheet("background-color: #CCCCCC; color: #666666;")
+      self.inputFolderSelector.setStyleSheet("")
+      self.outputFolderSelector.setStyleSheet("")
 
     # select from the local disk
     with It(qt.QLineEdit()) as w:
@@ -161,7 +185,6 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     self.inputSelector.setMRMLScene( slicer.mrmlScene )
     self.inputSelector.setToolTip( "Pick the tractography data to use for input." )
     parametersFormLayout.addRow("Input FiberBundle: ", self.inputSelector)
-
     self.onNodeSelectionChanged()
 
     # The callback function for connecting the selected node
@@ -171,18 +194,21 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     # Input file selector
     #
     def selectInputFile():
+      if self.loadmode == "slicer" or self.loadmode == "localdirectory":
+          button.setEnabled(False)
       self.inputFileGet.clear()
       inputFile = qt.QFileDialog.getOpenFileName(self.parent, "Select input file")
       if inputFile:
         self.inputFileGet.setText(inputFile)
 
-    with It(qt.QPushButton("Browse")) as button:
-        button.clicked.connect(selectInputFile)
+    with It(qt.QPushButton("Browse")) as filebrowsebutton:
+        filebrowsebutton.clicked.connect(selectInputFile)
+        #button.setEnabled(False)
+        
 
     layout = qt.QHBoxLayout()
     layout.addWidget(self.inputFileGet)
-    layout.addWidget(button)
-    #layout.addWidget(executeButton)
+    layout.addWidget(filebrowsebutton)
     parametersFormLayout.addRow("Input File:", layout)
 
     #
@@ -198,12 +224,12 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
       if inputfile_path:
         self.inputFolderSelector.setText(inputfile_path)
 
-    with It(qt.QPushButton("Browse")) as button:
-        button.clicked.connect(selectInputFolder)
+    with It(qt.QPushButton("Browse")) as folderbrowsebutton:
+        folderbrowsebutton.clicked.connect(selectInputFolder)
 
     layout = qt.QHBoxLayout()
     layout.addWidget(self.inputFolderSelector)
-    layout.addWidget(button)
+    layout.addWidget(folderbrowsebutton)
     parametersFormLayout.addRow("Input Folder:", layout)
 
     #
@@ -231,13 +257,27 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
         else:
           self.outputFolderSelector.setText(outputfile_path)
 
-    with It(qt.QPushButton("Browse")) as button:
-        button.clicked.connect(selectOutputFolder)
+    with It(qt.QPushButton("Browse")) as outputbutton:
+        outputbutton.clicked.connect(selectOutputFolder)
 
     layout = qt.QHBoxLayout()
     layout.addWidget(self.outputFolderSelector)
-    layout.addWidget(button)
+    layout.addWidget(outputbutton)
     parametersFormLayout.addRow("Output Folder:", layout)
+
+
+    #
+    #Initial display
+    #
+
+    self.inputSelector.setEnabled(False)
+    filebrowsebutton.setEnabled(False)
+    folderbrowsebutton.setEnabled(False)
+    outputbutton.setEnabled(False)
+    self.inputSelector.setStyleSheet("background-color: #CCCCCC; color: #666666;")
+    self.inputFileGet.setStyleSheet("background-color: #CCCCCC; color: #666666;")
+    self.inputFolderSelector.setStyleSheet("background-color: #CCCCCC; color: #666666;")
+    self.outputFolderSelector.setStyleSheet("background-color: #CCCCCC; color: #666666;")
 
     #
     # Apply Button
@@ -356,7 +396,8 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
     download = slicer.util.confirmYesNoDisplay("Atlas file size is ~4GB.  "+\
                       "Depending on your internet speed,  this download may take 1 hour.  "+\
-                      "Slicer will be freezing during this time.  Confirm to start downloading:")
+                      "\nNote: You can also move the atlas file to 'Resources' subfolder from local disk.\n"+\
+                      "Slicer will be freezing during downloading.  Confirm to start:")
     if download:
       self.logic.downloadAtlas()
     self.atlasExisted, msg = self.logic.checkAtlasExist()
@@ -643,6 +684,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
 
     display_node.SetVisibility(True)
 
+
   def Mainoperation(self, loadmode, input_tractography_path, outputFolderPath, RegMode, CleanMode, NumThreads):
 
     if os.name == 'posix':
@@ -686,7 +728,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     print("<wm_apply_ORG_atlas_to_subject> Tractography registration with mode [", RegMode, "]")
     RegistrationFolder = os.path.join(outputFolderPath, 'TractRegistration')
     print("input_tractography_path:",input_tractography_path)
-   
+
     # Start registration  
     wm_register_to_atlas_new = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_register_to_atlas_new.py" in str(p)][0]
     wm_register_to_atlas_new = os.path.join(os.path.dirname(pythonSlicerExecutablePath), '..', 'lib', 'Python', location, 'wm_register_to_atlas_new.py')
@@ -696,7 +738,8 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
             if input_tractography_path:
                 commandLine = [pythonSlicerExecutablePath, wm_register_to_atlas_new, "-mode", "rigid_affine_fast", input_tractography_path, os.path.join(RegAtlasFolder, "registration_atlas.vtk"), RegistrationFolder]
                 proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
-                slicer.util.logProcessOutput(proc)
+                slicer.util.logProcessOutput(proc) 
+                
         else:
             print(" - registration has been done.")
 
@@ -705,22 +748,23 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
         if not os.path.isfile(RegTractography):
             if input_tractography_path:
                 commandLine = [pythonSlicerExecutablePath, wm_register_to_atlas_new, "-mode", "affine", input_tractography_path, os.path.join(RegAtlasFolder, "registration_atlas.vtk"), RegistrationFolder]
-                proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
-                slicer.util.logProcessOutput(proc)
+                registration_output = run_registration(commandLine)
+                slicer.util.logText(registration_output)
                 affineRegTract = os.path.join(RegistrationFolder, caseID, "output_tractography", caseID+"_reg.vtk")
                 commandLine = [pythonSlicerExecutablePath, wm_register_to_atlas_new, "-mode", "nonrigid", affineRegTract, os.path.join(RegAtlasFolder, "registration_atlas.vtk"), RegistrationFolder]
                 proc = slicer.util.launchConsoleProcess(commandLine, useStartupEnvironment=True)
-                slicer.util.logProcessOutput(proc)
-        else:
-            print(" - registration has been done.")
+                slicer.util.logProcessOutput(proc) 
+                
+            else:
+                print(" - registration has been done.")
             
     print("")
-    
     if not os.path.isfile(RegTractography):
         print("")
         print("ERROR: Tractography registration failed. The output registered tractography data can not be found.")
         print("")
                  
+
     # Get the case ID for fiber clustering
     fn = os.path.basename(RegTractography)
     FCcaseID = os.path.splitext(fn)[0]
@@ -975,12 +1019,13 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
               except Exception as e:
                   print(f"Error loading VTP file: {file_path}")
                   print(f"Error message: {str(e)}")
-                
+
+      
   def run(self, loadmode, inputFilePath, inputFolderPath, selectedNodeName, polydata, outputFolderPath, RegMode, CleanMode, NumThreads):
 
       if loadmode == 'slicer':
         filename = os.path.join(outputFolderPath, selectedNodeName + ".vtp")
-        #Prevents write files from being overwritten
+        # Prevents write files from being overwritten
         count = 1
         basename, extension = os.path.splitext(filename)
         while os.path.exists(filename):

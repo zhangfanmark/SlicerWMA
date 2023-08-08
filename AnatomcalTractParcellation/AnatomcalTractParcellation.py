@@ -91,6 +91,8 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
     #
     def onSlicerButtonClicked():
       self.loadmode = "slicer"
+      self.inputFileGet.clear()
+      self.inputFolderSelector.clear() # clear the content of the irrelevant input
       # Interface interaction setting
       self.inputSelector.setEnabled(True)
       filebrowsebutton.setEnabled(False)
@@ -103,6 +105,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
     def onlocalfileButtonClicked():
       self.loadmode = "localfile"
+      self.inputFolderSelector.clear()
       self.selectedNodeName = None
       self.polydata = None
       # Interface interaction setting
@@ -117,6 +120,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
     def onlocaldirectoryButtonClicked():
       self.loadmode = "localdirectory"
+      self.inputFileGet.clear()
       self.selectedNodeName = None
       self.polydata = None
       # Interface interaction setting

@@ -3,6 +3,9 @@ from slicer.ScriptedLoadableModule import *
 import logging, subprocess, shutil
 import importlib.metadata, glob
 import platform
+import vtkmodules.all as vtk
+import numpy as np
+
 
 
 # helper class for cleaner multi-operation blocks on a single node.
@@ -12,14 +15,14 @@ class It(object):
   def __exit__(self, type, value, traceback): return False
 
 #
-# AnatomcalTractParcellation
+# AnatomicalTractParcellation
 #
 
-class AnatomcalTractParcellation(ScriptedLoadableModule):
+class AnatomicalTractParcellation(ScriptedLoadableModule):
 
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
-    self.parent.title = "AnatomcalTractParcellation" # TODO make this more human readable by adding spaces
+    self.parent.title = "AnatomicalTractParcellation" # TODO make this more human readable by adding spaces
     self.parent.categories = ["Diffusion.WMA"]
     self.parent.dependencies = []
     self.parent.contributors = ["Fan Zhang (UESTC, BWH, HMS), Kening Zhang (UESTC), Lauren O'Donnell (BWH, HMS)"]
@@ -30,20 +33,20 @@ class AnatomcalTractParcellation(ScriptedLoadableModule):
     self.parent.acknowledgementText = ""
     
 #
-# AnatomcalTractParcellationWidget
+# AnatomicalTractParcellationWidget
 #
 
-class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
+class AnatomicalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
   def __init__(self, parent=None):
-        super(AnatomcalTractParcellationWidget, self).__init__(parent)
+        super(AnatomicalTractParcellationWidget, self).__init__(parent)
 
 
   def setup(self):
 
     ScriptedLoadableModuleWidget.setup(self)
 
-    self.logic = AnatomcalTractParcellationLogic()
+    self.logic = AnatomicalTractParcellationLogic()
 
     #
     # Message Area: check if WMA and ORG Atlas exist
@@ -332,8 +335,22 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
     with It(ctk.ctkSliderWidget()) as w:
         self.NumThreadsSelector = w
+        if os.name == 'posix':
+          command = "sysctl -n hw.ncpu"
+          output = subprocess.check_output(command, shell=True)
+          # Decode the bytes output to string and get the available CPU core count
+          available_cores = int(output.decode().strip())
+        elif os.name == 'nt':
+          command = "wmic cpu get NumberOfCores"
+          output = subprocess.check_output(command, shell=True)
+          # Decode the bytes output to string and extract the available CPU core count
+          lines = output.decode().split("\n")
+          for line in lines:
+              if line.strip().isdigit():
+                  available_cores = int(line.strip())
+                  break
         w.minimum = 1
-        w.maximum = 8
+        w.maximum = available_cores # Represents the maximum number of available processors
         w.singleStep = 1
         w.setToolTip("control the NumThreads value")
         parametersFormLayout.addRow("Number of threads: ",self.NumThreadsSelector)
@@ -419,7 +436,7 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
 
   def onApplyButton(self):
     self.statusLabel.setText("")
-    logic = AnatomcalTractParcellationLogic()
+    logic = AnatomicalTractParcellationLogic()
 
     logic.run(
               self.loadmode,
@@ -434,10 +451,10 @@ class AnatomcalTractParcellationWidget(ScriptedLoadableModuleWidget):
           )
               
 #
-# AnatomcalTractParcellationLogic
+# AnatomicalTractParcellationLogic
 #
 
-class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
+class AnatomicalTractParcellationLogic(ScriptedLoadableModuleLogic):
 
   
   # Check whether Xcode Command Line Tools is installed in Slicer Python
@@ -513,7 +530,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
   #download atlas
   def downloadAtlas():
     
-    pythonSlicerExecutablePath = AnatomcalTractParcellationLogic._executePythonModule()
+    pythonSlicerExecutablePath = AnatomicalTractParcellationLogic._executePythonModule()
 
     try:
       wm_download_anatomically_curated_atlas = [str(p) for p in importlib.metadata.files('whitematteranalysis') if "wm_download_anatomically_curated_atlas.py" in str(p)][0]
@@ -582,6 +599,132 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     del writer
 
     print("Done writing ", filename)
+    
+  def __init__(self):
+      self.header = '<MRML  version="Slicer4" userTags="">\n'
+      self.footer = '</MRML>\n'
+      self.indent = ' '
+      self.node_id = 0
+      self.props_id = 0
+      
+  def write(self, pd_filenames, colors, filename, ratio=1.0):
+      #print "converting colors to strings"
+      f = open(filename, "w")
+      f.write(self.header)
+      color_list = list()
+      for cidx in range(len(colors)):
+          col = str(colors[cidx,0]/256.0) + " " + str(colors[cidx,1]/256.0) + " " + str(colors[cidx,2]/256.0)
+          color_list.append(col)
+      #print color_list
+      print("<mrml.py> Writing", len(pd_filenames), " filenames in MRML scene:", filename)
+      f = open(filename, "w")
+      f.write(self.header)
+      for pidx in range(len(pd_filenames)):
+          name = os.path.splitext(os.path.split(pd_filenames[pidx])[1])[0]
+          self.write_node(pd_filenames[pidx], color_list[pidx], name, f, ratio)
+      f.write(self.footer)
+      f.close()
+      
+  def write_node(self, pd_fname, color, name, f, ratio):
+
+      self.node_id += 1
+      idx = self.node_id
+      props = list()
+      
+      f.write(self.indent)
+      f.write("<FiberBundleStorage\n")
+      f.write(self.indent)
+      f.write(self.indent)
+      f.write("id=\"vtkMRMLFiberBundleStorageNode" + str(idx) + "\"  ")
+      f.write("name=\"FiberBundleStorage\"  hideFromEditors=\"true\"  selectable=\"true\"  selected=\"false\"  ")
+      f.write("fileName=\"" + pd_fname+ "\"  ")
+      f.write("useCompression=\"1\"  readState=\"0\"  writeState=\"0\" ></FiberBundleStorage>")
+      f.write("\n")
+              
+      self.props_id += 1
+      idxp = self.props_id
+      props.append(idxp)
+
+      f.write(self.indent)
+      f.write("<FiberBundleLineDisplayNode\n")
+      f.write(self.indent)
+      f.write(self.indent)
+      f.write("id=\"vtkMRMLFiberBundleLineDisplayNode" + str(idx) + "\"  ")
+      f.write("name=\"FiberBundleLineDisplayNode\"  hideFromEditors=\"true\"  selectable=\"true\"  selected=\"false\"  ")
+      f.write("color=\"" + color + "\"  ")
+      f.write("edgeColor=\"0 0 0\"  selectedColor=\"1 0 0\"  selectedAmbient=\"0.4\"  ambient=\"0\"  diffuse=\"1\"  selectedSpecular=\"0.5\"  specular=\"0\"  power=\"1\"  opacity=\"1\"  pointSize=\"1\"  lineWidth=\"1\"  representation=\"2\"  lighting=\"true\"  interpolation=\"1\"  shading=\"true\"  visibility=\"true\"  edgeVisibility=\"false\"  clipping=\"false\"  sliceIntersectionVisibility=\"false\"  sliceIntersectionThickness=\"1\"  frontfaceCulling=\"false\"  backfaceCulling=\"false\"  scalarVisibility=\"false\"  vectorVisibility=\"false\"  tensorVisibility=\"false\"  interpolateTexture=\"false\"  autoScalarRange=\"true\"  scalarRange=\"0 1\"  colorNodeID=\"vtkMRMLColorTableNodeRainbow\"   colorMode =\"0\"  ")
+      f.write("DiffusionTensorDisplayPropertiesNodeRef=\"vtkMRMLDiffusionTensorDisplayPropertiesNode" + str(idxp) + "\"  ")
+      f.write("></FiberBundleLineDisplayNode>")
+      f.write("\n")
+
+      self.props_id += 1
+      idxp = self.props_id
+      props.append(idxp)
+      
+      f.write(self.indent)
+      f.write("<FiberBundleTubeDisplayNode\n")
+      f.write(self.indent)
+      f.write(self.indent)
+      f.write("id=\"vtkMRMLFiberBundleTubeDisplayNode" + str(idx) + "\"  ")
+      f.write("name=\"FiberBundleTubeDisplayNode\"  hideFromEditors=\"true\"  selectable=\"true\"  selected=\"false\"  ")
+      f.write("color=\"" + color + "\"  ")
+      f.write("edgeColor=\"0 0 0\"  selectedColor=\"1 0 0\"  selectedAmbient=\"0.4\"  ambient=\"0.25\"  diffuse=\"0.8\"  selectedSpecular=\"0.5\"  specular=\"0.25\"  power=\"20\"  opacity=\"1\"  pointSize=\"1\"  lineWidth=\"1\"  representation=\"2\"  lighting=\"true\"  interpolation=\"1\"  shading=\"true\"  visibility=\"false\"  edgeVisibility=\"false\"  clipping=\"false\"  sliceIntersectionVisibility=\"false\"  sliceIntersectionThickness=\"1\"  frontfaceCulling=\"false\"  backfaceCulling=\"false\"  scalarVisibility=\"false\"  vectorVisibility=\"false\"  tensorVisibility=\"false\"  interpolateTexture=\"false\"  autoScalarRange=\"true\"  scalarRange=\"0 1\"  colorNodeID=\"vtkMRMLColorTableNodeRainbow\"   colorMode =\"0\"  ")
+      f.write("DiffusionTensorDisplayPropertiesNodeRef=\"vtkMRMLDiffusionTensorDisplayPropertiesNode" + str(idxp) + "\"  ")
+      f.write("tubeRadius =\"0.5\"  tubeNumberOfSides =\"6\" ></FiberBundleTubeDisplayNode>")
+      f.write("\n")
+      
+      self.props_id += 1
+      idxp = self.props_id
+      props.append(idxp)
+
+      f.write(self.indent)
+      f.write("<FiberBundleGlyphDisplayNode\n")
+      f.write(self.indent)
+      f.write(self.indent)
+      f.write("id=\"vtkMRMLFiberBundleGlyphDisplayNode" + str(idx) + "\"  ")
+      f.write("name=\"FiberBundleGlyphDisplayNode\"  hideFromEditors=\"true\"  selectable=\"true\"  selected=\"false\"  ")
+      f.write("color=\"" + color + "\"  ")
+      f.write("edgeColor=\"0 0 0\"  selectedColor=\"1 0 0\"  selectedAmbient=\"0.4\"  ambient=\"0\"  diffuse=\"1\"  selectedSpecular=\"0.5\"  specular=\"0\"  power=\"1\"  opacity=\"1\"  pointSize=\"1\"  lineWidth=\"1\"  representation=\"2\"  lighting=\"true\"  interpolation=\"1\"  shading=\"true\"  visibility=\"false\"  edgeVisibility=\"false\"  clipping=\"false\"  sliceIntersectionVisibility=\"false\"  sliceIntersectionThickness=\"1\"  frontfaceCulling=\"false\"  backfaceCulling=\"false\"  scalarVisibility=\"false\"  vectorVisibility=\"false\"  tensorVisibility=\"false\"  interpolateTexture=\"false\"  autoScalarRange=\"true\"  scalarRange=\"0 1\"  colorNodeID=\"vtkMRMLColorTableNodeRainbow\"   colorMode =\"0\"  ")
+      f.write("DiffusionTensorDisplayPropertiesNodeRef=\"vtkMRMLDiffusionTensorDisplayPropertiesNode" + str(idxp) + "\"  ")
+      f.write("twoDimensionalVisibility=\"false\" ></FiberBundleGlyphDisplayNode>")
+      f.write("\n")
+
+
+      f.write(self.indent)
+      f.write("<FiberBundle\n")
+      f.write(self.indent)
+      f.write(self.indent)
+      f.write("id=\"vtkMRMLFiberBundleNode" + str(idx) + "\"  ")
+      f.write("name=\"" + name + "\"  ")
+      f.write("hideFromEditors=\"false\"  selectable=\"true\"  selected=\"false\"  ")
+      f.write("displayNodeRef=\"vtkMRMLFiberBundleLineDisplayNode" + str(idx) + "  ")
+      f.write("vtkMRMLFiberBundleTubeDisplayNode" + str(idx) + "  ")
+      f.write("vtkMRMLFiberBundleGlyphDisplayNode" + str(idx) + "\"  ")
+      f.write("storageNodeRef=\"vtkMRMLFiberBundleStorageNode" + str(idx) + "\"  ")
+      f.write("references=\"display:")
+      f.write("vtkMRMLFiberBundleLineDisplayNode" + str(idx) + "  ")
+      f.write("vtkMRMLFiberBundleTubeDisplayNode" + str(idx) + "  ")
+      f.write("vtkMRMLFiberBundleGlyphDisplayNode" + str(idx) + ";")
+      f.write("storage:")
+      f.write("vtkMRMLFiberBundleStorageNode" + str(idx) + ";\"  ")
+      f.write("userTags=\"\"  SelectWithAnnotationNode=\"0\"  SelectionWithAnnotationNodeMode=\"0\"  ")
+      f.write("SubsamplingRatio=\"" + str(ratio) + "\" ></FiberBundle>")
+      f.write("\n")
+
+      for prop in props:
+          self.write_prop_node(prop, f)
+      
+
+  def write_prop_node(self, idx, f):
+
+      f.write(self.indent)
+      f.write("<DiffusionTensorDisplayProperties\n")
+      f.write(self.indent)
+      f.write(self.indent)
+      f.write("id=\"vtkMRMLDiffusionTensorDisplayPropertiesNode" + str(idx) + "\"  ")
+      f.write("name=\"DiffusionTensorDisplayPropertiesNode\"  description=\"A user defined colour table, use the editor to specify it\"  hideFromEditors=\"true\"  selectable=\"true\"  selected=\"false\"  userTags=\"\" type=\"13\" numcolors=\"0\"  glyphGeometry=\"2\"  colorGlyphBy=\"3\"  glyphScaleFactor=\"50\"  glyphEigenvector=\"1\"  glyphExtractEigenvalues=\"1\"  lineGlyphResolution=\"20\"  tubeGlyphRadius=\"0.1\"  tubeGlyphNumberOfSides=\"4\"  ellipsoidGlyphThetaResolution=\"9\"  ellipsoidGlyphPhiResolution=\"9\"  superquadricGlyphGamma=\"1\"  superquadricGlyphThetaResolution=\"6\"  superquadricGlyphPhiResolution=\"6\" ></DiffusionTensorDisplayProperties>")
+      f.write("\n")
+      
 
   def harden_transform(self, polydata, transform_node, inverse, outdir):
     # Apply harden transform with slicer
@@ -688,6 +831,69 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
 
     display_node.SetVisibility(True)
 
+  def hex_to_rgb(self, hex_color):
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+  def load_and_color_vtp(self, filename, color):
+    # 创建.vtp文件读取器
+    reader = vtk.vtkXMLPolyDataReader()
+    reader.SetFileName(filename)
+    reader.Update()
+    
+    # 获取文件的PolyData
+    poly_data = reader.GetOutput()
+    
+    # 创建颜色数组
+    colors = vtk.vtkUnsignedCharArray()
+    colors.SetNumberOfComponents(3)
+    colors.SetName("Colors")
+
+    # 为PolyData的每个点设置颜色
+    for _ in range(poly_data.GetNumberOfPoints()):
+        colors.InsertNextTuple3(color[0], color[1], color[2])
+
+    # 将颜色数组与PolyData关联
+    poly_data.GetPointData().SetScalars(colors)
+
+    # 创建演员
+    mapper = vtk.vtkPolyDataMapper()
+    mapper.SetInputData(poly_data)
+    
+    actor = vtk.vtkActor()
+    actor.SetMapper(mapper)
+    
+    # 获取当前场景
+    current_scene = slicer.app.layoutManager().threeDWidget(0).threeDView()
+    
+    # 将演员添加到场景中
+    current_scene.addActor(actor)
+
+  def loadVTPFileWithColorMapping(self, file_path, color_mapping):
+    scene = slicer.mrmlScene
+
+    # Load the VTP file as a FiberBundle
+    loaded_fiber_node = slicer.util.loadFiberBundle(file_path)
+    if loaded_fiber_node is None:
+        print(f"Failed to load VTP file: {file_path}")
+        return
+
+    # Modify the display properties of the loaded FiberBundle
+    display_node = loaded_fiber_node.GetDisplayNode()
+    if display_node is None:
+        display_node = slicer.vtkMRMLFiberBundleDisplayNode()
+        scene.AddNode(display_node)
+        loaded_fiber_node.SetAndObserveDisplayNodeID(display_node.GetID())
+
+    display_node.SetVisibility(True)
+
+    # 根据文件名查找颜色并将其应用于纤维捆
+    file_name = os.path.basename(file_path)
+    if file_name in color_mapping:
+        color = color_mapping[file_name]
+        print(file_name, color)
+        display_node.SetFiberColor(color[0], color[1], color[2])
+
 
   def Mainoperation(self, loadmode, input_tractography_path, outputFolderPath, RegMode, CleanMode, NumThreads):
 
@@ -723,7 +929,7 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
     
     RegAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-RegAtlas-100HCP')
     FCAtlasFolder = os.path.join(AtlasBaseFolder, 'ORG-800FC-100HCP')
-    pythonSlicerExecutablePath = AnatomcalTractParcellationLogic._executePythonModule()
+    pythonSlicerExecutablePath = AnatomicalTractParcellationLogic._executePythonModule()
     print("<wm_apply_ORG_atlas_to_subject> White matter atlas: ", AtlasBaseFolder)
     print(" - tractography registration atlas:", RegAtlasFolder)
     print(" - fiber clustering atlas:", FCAtlasFolder)
@@ -1023,6 +1229,98 @@ class AnatomcalTractParcellationLogic(ScriptedLoadableModuleLogic):
               except Exception as e:
                   print(f"Error loading VTP file: {file_path}")
                   print(f"Error message: {str(e)}")
+      mrml_filename = "scene_colored.mrml"
+
+      # Make sure slicer loads the scene correctly, normalizing the file name
+      for filename in os.listdir(AnatomicalTractsFolder):
+        file_path = os.path.join(AnatomicalTractsFolder, filename)
+        new_filename = filename.replace("&", "_")
+        new_file_path = os.path.join(AnatomicalTractsFolder, new_filename)
+        os.rename(file_path, new_file_path)
+    
+      input_polydatas = self.list_vtk_files(AnatomicalTractsFolder)
+
+      # Color chart
+      colors = [
+              self.hex_to_rgb("#ff0029"),
+              self.hex_to_rgb("#ff0029"),
+              self.hex_to_rgb("#ffa400"),
+              self.hex_to_rgb("#ffa400"),
+              self.hex_to_rgb("#241155"),
+              self.hex_to_rgb("#58137c"),
+              self.hex_to_rgb("#9a2c7f"),
+              self.hex_to_rgb("#da4669"),
+              self.hex_to_rgb("#fa825e"),
+              self.hex_to_rgb("#fec589"),
+              self.hex_to_rgb("#fdefb1"),
+              self.hex_to_rgb("#460d5f"),
+              self.hex_to_rgb("#460d5f"),
+              self.hex_to_rgb("#10256c"),
+              self.hex_to_rgb("#10256c"),
+              self.hex_to_rgb("#225ea8"),
+              self.hex_to_rgb("#225ea8"),
+              self.hex_to_rgb("#2a9dc0"),
+              self.hex_to_rgb("#2a9dc0"),
+              self.hex_to_rgb("#ff0fee"),
+              self.hex_to_rgb("#ff0fee"),
+              self.hex_to_rgb("#6000ff"),
+              self.hex_to_rgb("#6000ff"),
+              self.hex_to_rgb("#3b518a"),
+              self.hex_to_rgb("#3b518a"),
+              self.hex_to_rgb("#00ff05"),
+              self.hex_to_rgb("#00ff05"),
+              self.hex_to_rgb("#1c978a"),
+              self.hex_to_rgb("#1c978a"),
+              self.hex_to_rgb("#82d34c"),
+              self.hex_to_rgb("#82d34c"),
+              self.hex_to_rgb("#00fffd"),
+              self.hex_to_rgb("#00fffd"),
+              self.hex_to_rgb("#efe51b"),
+              self.hex_to_rgb("#00aaff"),
+              self.hex_to_rgb("#00aaff"),
+              self.hex_to_rgb("#9ed8b7"),
+              self.hex_to_rgb("#9ed8b7"),
+              self.hex_to_rgb("#ff7984"),
+              self.hex_to_rgb("#ff7984"),
+              self.hex_to_rgb("#0012ff"),
+              self.hex_to_rgb("#0012ff"),
+              self.hex_to_rgb("#ffea00"),
+              self.hex_to_rgb("#ffea00"),
+              self.hex_to_rgb("#c200ff"),
+              self.hex_to_rgb("#c200ff"),
+              self.hex_to_rgb("#ffaf4e"),
+              self.hex_to_rgb("#ffaf4e"),
+              self.hex_to_rgb("#ffed11"),
+              self.hex_to_rgb("#ffed11"),
+              self.hex_to_rgb("#e41a1b"),
+              self.hex_to_rgb("#e41a1b"),
+              self.hex_to_rgb("#377eb7"),
+              self.hex_to_rgb("#377eb7"),
+              self.hex_to_rgb("#4daf4a"),
+              self.hex_to_rgb("#4daf4a"),
+              self.hex_to_rgb("#984ea3"),
+              self.hex_to_rgb("#984ea3"),
+              self.hex_to_rgb("#ff7f00"),
+              self.hex_to_rgb("#ff7f00"),
+              self.hex_to_rgb("#feff33"),
+              self.hex_to_rgb("#feff33"),
+              self.hex_to_rgb("#f880bf"),
+              self.hex_to_rgb("#f880bf"),
+              self.hex_to_rgb("#999999"),
+              self.hex_to_rgb("#999999"),
+              self.hex_to_rgb("#c7e9b4"),
+              self.hex_to_rgb("#c7e9b4"),
+              self.hex_to_rgb("#f0f9b7"),
+              self.hex_to_rgb("#f0f9b7"),
+              self.hex_to_rgb("#feffd9"),
+              self.hex_to_rgb("#feffd9"),
+              self.hex_to_rgb("#ff00bf"),
+              self.hex_to_rgb("#ff00bf"), 
+              ]
+      colors = np.array(list(colors))
+      mrml_file_path = os.path.join(AnatomicalTractsFolder, mrml_filename)
+      self.write(input_polydatas, colors, mrml_file_path)
+      #slicer.util.loadScene(mrml_file_path)
 
       
   def run(self, loadmode, inputFilePath, inputFolderPath, selectedNodeName, polydata, outputFolderPath, RegMode, CleanMode, NumThreads):

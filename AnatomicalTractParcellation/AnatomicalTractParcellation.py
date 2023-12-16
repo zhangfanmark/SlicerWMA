@@ -1320,7 +1320,7 @@ class AnatomicalTractParcellationLogic(ScriptedLoadableModuleLogic):
       colors = np.array(list(colors))
       mrml_file_path = os.path.join(AnatomicalTractsFolder, mrml_filename)
       self.write(input_polydatas, colors, mrml_file_path)
-      #slicer.util.loadScene(mrml_file_path)
+      slicer.util.loadScene(mrml_file_path)
 
       
   def run(self, loadmode, inputFilePath, inputFolderPath, selectedNodeName, polydata, outputFolderPath, RegMode, CleanMode, NumThreads):

@@ -887,7 +887,7 @@ class AnatomicalTractParcellationLogic(ScriptedLoadableModuleLogic):
 
     display_node.SetVisibility(True)
 
-    # 根据文件名查找颜色并将其应用于纤维捆
+    # Find the color based on the file name and apply it to the bundle
     file_name = os.path.basename(file_path)
     if file_name in color_mapping:
         color = color_mapping[file_name]

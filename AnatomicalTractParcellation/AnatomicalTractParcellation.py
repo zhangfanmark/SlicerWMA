@@ -836,37 +836,37 @@ class AnatomicalTractParcellationLogic(ScriptedLoadableModuleLogic):
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
   def load_and_color_vtp(self, filename, color):
-    # 创建.vtp文件读取器
+    # Create a.vtp file reader
     reader = vtk.vtkXMLPolyDataReader()
     reader.SetFileName(filename)
     reader.Update()
     
-    # 获取文件的PolyData
+    # Gets the PolyData of the file
     poly_data = reader.GetOutput()
     
-    # 创建颜色数组
+    # Create a color array
     colors = vtk.vtkUnsignedCharArray()
     colors.SetNumberOfComponents(3)
     colors.SetName("Colors")
 
-    # 为PolyData的每个点设置颜色
+    # Set a color for each point of PolyData
     for _ in range(poly_data.GetNumberOfPoints()):
         colors.InsertNextTuple3(color[0], color[1], color[2])
 
-    # 将颜色数组与PolyData关联
+    # Associate a color array with PolyData
     poly_data.GetPointData().SetScalars(colors)
 
-    # 创建演员
+    # Create an actor
     mapper = vtk.vtkPolyDataMapper()
     mapper.SetInputData(poly_data)
     
     actor = vtk.vtkActor()
     actor.SetMapper(mapper)
     
-    # 获取当前场景
+    # Get current scene
     current_scene = slicer.app.layoutManager().threeDWidget(0).threeDView()
     
-    # 将演员添加到场景中
+    # Add actors to the scene
     current_scene.addActor(actor)
 
   def loadVTPFileWithColorMapping(self, file_path, color_mapping):
